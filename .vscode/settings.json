@@ -1,0 +1,18 @@
+{
+  "idf.pythonInstallPath": "/usr/bin/python3",
+  "idf.espIdfPath": "/home/twig/esp/v6.0/esp-idf",
+  "idf.openOcdConfigs": [
+    "board/esp32-wrover-kit-3.3v.cfg"
+  ],
+  "idf.port": "detect",
+  "idf.toolsPath": "/home/twig/.espressif",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32"
+  },
+  "clangd.path": "/home/twig/.espressif/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=/home/twig/Documents/Capstone/Capstone-SSWH-Code/build"
+  ]
+}
