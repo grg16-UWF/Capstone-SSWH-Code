@@ -64,6 +64,7 @@ void loop() {
 
   // send sensor data over matter
   if( DEBUG ) {
+    printLocalTime();
     Serial.printf("Temp Input:    %d C\n", temp_input);
     Serial.printf("Temp Collect:  %d C\n", temp_collector);
     Serial.printf("Temp Tank:     %d C\n", temp_tank);
@@ -80,10 +81,17 @@ void loop() {
   // calculate offset from solar noon and desired angle
 
   // set acutator to correct position based on desired angle and current angle
-
+  
 }
 
-
+void printLocalTime() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("No time available (yet)");
+    return;
+  }
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+}
 
 void rtc_sync() {
   sntp_set_time_sync_notification_cb(rtc_sync_callback); // set callback func to update RTC_SYNCED and print to debug.
