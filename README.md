@@ -16,3 +16,4 @@ Program for smart system
  - [ ] Pump on timer and/or sensor control
  - [ ] Tracking Acutator 15 deg/hr based on solar noon array
  - - [ ] need local time somehow (WiFi? Builtin?)
+ - - [ ] use inclinometer / gyroscope for actual angle
