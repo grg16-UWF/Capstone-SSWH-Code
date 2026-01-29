@@ -6,7 +6,14 @@ Program for smart system
 ## [ESP32 API Docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/index.html)
 
 ## Pinout
+### ESP32
 ![Pinout](ESP32_pinout.jpg)
+
+### Temp Sensor
+- Red: VCC
+- Black - GND
+- Yellow - Data
+- Pullup Resistor - 4.7k ohm Data/VCC
 
 ## TODO
  - [ ] Read sensors
