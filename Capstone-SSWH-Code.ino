@@ -29,13 +29,20 @@ const char *ntpServer2 = "time.nist.gov";
 #define daylightOffset_sec 3600
 
 // OneWire Setup
-#define ONEWIRE_MAX_DEVICES = 5;
-// OneWire32 onewire(PIN_TEMP_ONEWIRE);
-// Temp sensor OneWire indices (placeholder)
-#define TEMP_INPUT 0
-#define TEMP_COLLECTOR 1
-#define TEMP_TANK 2
-#define TEMP_AIR 3
+#define ONEWIRE_MAX_DEVICES 5
+
+OneWire32 onewire(PIN_TEMP_ONEWIRE);
+uint8_t onewire_num_devices = 0;
+uint64_t onewire_active_addrs[ONEWIRE_MAX_DEVICES];
+
+
+// Temp sensor OneWire addresses
+#define TEMP_INPUT 0x400000005e3c8428
+#define TEMP_COLLECTOR 0
+#define TEMP_TANK 0
+#define TEMP_AIR 0
+
+float temp_measured[ONEWIRE_MAX_DEVICES];
 
 
 
@@ -50,13 +57,6 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   wifi_connected_prev = false;
 
-  // list onewire addresses
-  // Serial.println("[OneWire] Addresses:");
-  // uint64_t ow_addr[ONEWIRE_MAX_DEVICES];
-  // uint8_t ow_num_devs = onewire.search(addr, ONEWIRE_MAX_DEVICES);
-	// for (uint8_t i = 0; i < ow_num_devs; i += 1) {
-	// 	Serial.printf("%d: 0x%llx,\n", i, addr[i]);
-  // }
 
   // init matter
 }
@@ -65,10 +65,10 @@ void loop() {
   delay(2000);
   if( DEBUG ) {
     Serial.println();
-    printLocalTime();
+    time_println();
   }
 
-  bool wifi_connected = checkWifiStatus();
+  bool wifi_connected = wifi_check_status();
 
   // If we have a WiFi connection AND the RTC has not already been updated, then try to update the RTC
   if( !RTC_SYNCED && wifi_connected ) {
@@ -82,6 +82,13 @@ void loop() {
   int temp_collector;
   int temp_tank;
   int temp_air;
+
+
+  if( onewire_num_devices <= 0 ) { // Find onewire devices if none are detected.
+    temp_setup_onewire();
+  }
+  // list onewire addresses for identifying sensors
+  temp_print_onewire_addrs();
 
 	// read temp sensors
   // random data until sensors connected
@@ -113,7 +120,9 @@ void loop() {
   
 }
 
-bool checkWifiStatus() {
+
+// WIFI Functions
+bool wifi_check_status() {
   bool wifi_connected_current = WiFi.status() == WL_CONNECTED;
 
   if( wifi_connected_prev != wifi_connected_current) { // If wifi connected status changes, then log it
@@ -130,7 +139,8 @@ bool checkWifiStatus() {
 }
 
 
-void printLocalTime() {
+// Time Functions
+void time_println() {
   if( DEBUG ) {
     struct tm timeinfo;
     if (!getLocalTime(&timeinfo)) {
@@ -149,7 +159,28 @@ void rtc_sync() {
 void rtc_sync_callback(struct timeval *t) {
   if( DEBUG ) {
     Serial.print("Got time adjustment from NTP, time is: ");
-    printLocalTime();
+    time_println();
   }
   RTC_SYNCED = true;
 }
+
+
+// TEMP SENSOR FUNCTIONS
+void temp_setup_onewire() {
+  onewire_num_devices = onewire.search(onewire_active_addrs, ONEWIRE_MAX_DEVICES);
+}
+
+void temp_print_onewire_addrs() {
+  Serial.println("[OneWire] Addresses:");
+	for (uint8_t i = 0; i < onewire_num_devices; i += 1) {
+		Serial.printf("%d: 0x%llx,\n", i, onewire_active_addrs[i]);
+  }
+}
+
+void temp_read_sensors() {
+
+}
+
+
+
+
