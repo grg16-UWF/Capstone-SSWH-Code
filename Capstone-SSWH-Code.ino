@@ -34,11 +34,12 @@ const char *ntpServer2 = "time.nist.gov";
 OneWire32 onewire(PIN_TEMP_ONEWIRE);
 uint8_t onewire_num_devices = 0;
 uint64_t onewire_active_addrs[ONEWIRE_MAX_DEVICES];
-
+const char *ONEWIRE_ERROR_TYPES[] = {"", "CRC", "BAD","DC","DRV"};
 
 // Temp sensor OneWire addresses
+
 #define TEMP_INPUT 0x400000005e3c8428
-#define TEMP_COLLECTOR 0
+#define TEMP_COLLECTOR 0xd60000005d671928
 #define TEMP_TANK 0
 #define TEMP_AIR 0
 
@@ -50,13 +51,16 @@ void setup() {
   if( DEBUG ) {
     Serial.begin(115200);
     delay(500);
-    Serial.println("\n[STARTING].................................");
+    Serial.println("\n[STARTUP].................................");
     Serial.printf("[WIFI] Connecting to '%s' with password '%s'\n", WIFI_SSID, WIFI_PASS);
   }
   // Manual wifi, later let matter setup wifi and use it when available.
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   wifi_connected_prev = false;
 
+  if( DEBUG ) {
+    Serial.println("setup() ended");
+  }
 
   // init matter
 }
@@ -72,41 +76,27 @@ void loop() {
 
   // If we have a WiFi connection AND the RTC has not already been updated, then try to update the RTC
   if( !RTC_SYNCED && wifi_connected ) {
-    Serial.println("Starting RTC sync.");
     rtc_sync();
   }
   
 
-  // Temp sensor data
-  int temp_input;
-  int temp_collector;
-  int temp_tank;
-  int temp_air;
-
 
   if( onewire_num_devices <= 0 ) { // Find onewire devices if none are detected.
-    temp_setup_onewire();
+    temp_setup_onewire(); // only run this once to avoid rearranging address indices
   }
   // list onewire addresses for identifying sensors
-  temp_print_onewire_addrs();
+  // temp_print_onewire_addrs();
 
 	// read temp sensors
-  // random data until sensors connected
-  temp_input = random(15, 19);
-  temp_collector = random(24, 29);
-  temp_tank = random(35, 39);
-  temp_air = random(15, 25);
-
+  temp_read_sensors();
 
   // send sensor data over matter
   if( DEBUG ) {
-    Serial.printf("Temp Input:    %d C\n", temp_input);
-    Serial.printf("Temp Collect:  %d C\n", temp_collector);
-    Serial.printf("Temp Tank:     %d C\n", temp_tank);
-    Serial.printf("Temp Air:      %d C\n", temp_air);
+    Serial.printf("Temp Input:    %11.6f C\n", temp_get_by_addr(TEMP_INPUT) );
+    Serial.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
+    Serial.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
+    Serial.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
   }
-  return;
-
   // enable/disable pump if needed (check time since last toggle)
 
 
@@ -152,6 +142,9 @@ void time_println() {
 }
 
 void rtc_sync() {
+  if( DEBUG ) {
+    Serial.println("[RTC] Starting RTC sync.");
+  }
   sntp_set_time_sync_notification_cb(rtc_sync_callback); // set callback func to update RTC_SYNCED and print to debug.
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer1, ntpServer2);
 }
@@ -178,7 +171,28 @@ void temp_print_onewire_addrs() {
 }
 
 void temp_read_sensors() {
+  onewire.request();
+  delay(750);
 
+  for( uint8_t i = 0; i < onewire_num_devices; i++ ) {
+    uint8_t error = onewire.getTemp(onewire_active_addrs[i], temp_measured[i]);
+    if( error ) {
+      Serial.printf("[OneWire] ERROR: 0x%llx errored: %s\n", onewire_active_addrs[i], ONEWIRE_ERROR_TYPES[error]);
+    }
+    else {
+      Serial.printf("[OneWire] DATA: 0x%llx : %f\n", onewire_active_addrs[i], temp_measured[i]);
+    }
+  }
+}
+
+
+float temp_get_by_addr( uint64_t addr ) {
+  for( uint8_t i = 0; i < onewire_num_devices; i++ ) { // loop through all active addresses
+    if( onewire_active_addrs[i] == addr ) { // when current addr matches given addr, return measured value at this index.
+      return temp_measured[i];
+    }
+  }
+  return -100.0; // if address is not found, return temp as -100 C
 }
 
 
