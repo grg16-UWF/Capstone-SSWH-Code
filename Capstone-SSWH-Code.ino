@@ -5,7 +5,7 @@
 #include "OneWireESP32.h" // OneWire library
 
 #define DEBUG true // Enable debug output to serial port
-
+#define DebugLog if(DEBUG) Serial
 
 // Wifi Setup
 #include "env.h" // defines WIFI_SSID and WIFI_PASS 
@@ -68,10 +68,9 @@ void setup() {
 
 void loop() {
   delay(2000);
-  if( DEBUG ) {
-    Serial.println();
-    time_println();
-  }
+  DebugLog.println();
+  time_println();
+
 
   bool wifi_connected = wifi_check_status();
 
@@ -92,12 +91,11 @@ void loop() {
   temp_read_sensors();
 
   // send sensor data over matter
-  if( DEBUG ) {
-    Serial.printf("Temp Input:    %11.6f C\n", temp_get_by_addr(TEMP_INPUT) );
-    Serial.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
-    Serial.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
-    Serial.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
-  }
+  DebugLog.printf("Temp Input:    %11.6f C\n", temp_get_by_addr(TEMP_INPUT) );
+  DebugLog.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
+  DebugLog.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
+  DebugLog.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
+
   // enable/disable pump if needed (check time since last toggle)
 
 
@@ -118,10 +116,10 @@ bool wifi_check_status() {
 
   if( wifi_connected_prev != wifi_connected_current) { // If wifi connected status changes, then log it
     if( wifi_connected_current ) {
-      Serial.println("[WIFI] Connected");
+      DebugLog.println("[WIFI] Connected");
     }
     else {
-      Serial.println("[WIFI] Disconnected");
+      DebugLog.println("[WIFI] Disconnected");
     }
   }
   wifi_connected_prev = wifi_connected_current;
@@ -132,7 +130,7 @@ bool wifi_check_status() {
 
 // Time Functions
 void time_println() {
-  if( DEBUG ) {
+  if( DEBUG ) { // do nothing if not in DEBUG mode.
     struct tm timeinfo;
     if (!getLocalTime(&timeinfo)) {
       Serial.println("No time available (yet)");
@@ -143,18 +141,14 @@ void time_println() {
 }
 
 void rtc_sync() {
-  if( DEBUG ) {
-    Serial.println("[RTC] Starting RTC sync.");
-  }
+  DebugLog.println("[RTC] Starting RTC sync.");
   sntp_set_time_sync_notification_cb(rtc_sync_callback); // set callback func to update RTC_SYNCED and print to debug.
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer1, ntpServer2);
 }
 
 void rtc_sync_callback(struct timeval *t) {
-  if( DEBUG ) {
-    Serial.print("Got time adjustment from NTP, time is: ");
-    time_println();
-  }
+  DebugLog.print("Got time adjustment from NTP, time is: ");
+  time_println();
   RTC_SYNCED = true;
 }
 
@@ -165,9 +159,11 @@ void temp_setup_onewire() {
 }
 
 void temp_print_onewire_addrs() {
-  Serial.println("[OneWire] Addresses:");
-	for (uint8_t i = 0; i < onewire_num_devices; i += 1) {
-		Serial.printf("%d: 0x%llx,\n", i, onewire_active_addrs[i]);
+  if (DEBUG) { // do nothing if not in DEBUG mode.
+    Serial.println("[OneWire] Addresses:");
+    for (uint8_t i = 0; i < onewire_num_devices; i += 1) {
+      Serial.printf("%d: 0x%llx,\n", i, onewire_active_addrs[i]);
+    }
   }
 }
 
@@ -178,10 +174,10 @@ void temp_read_sensors() {
   for( uint8_t i = 0; i < onewire_num_devices; i++ ) {
     uint8_t error = onewire.getTemp(onewire_active_addrs[i], temp_measured[i]);
     if( error ) {
-      Serial.printf("[OneWire] ERROR: 0x%llx errored: %s\n", onewire_active_addrs[i], ONEWIRE_ERROR_TYPES[error]);
+      DebugLog.printf("[OneWire] ERROR: 0x%llx errored: %s\n", onewire_active_addrs[i], ONEWIRE_ERROR_TYPES[error]);
     }
     else {
-      Serial.printf("[OneWire] DATA: 0x%llx : %f\n", onewire_active_addrs[i], temp_measured[i]);
+      DebugLog.printf("[OneWire] DATA: 0x%llx : %f\n", onewire_active_addrs[i], temp_measured[i]);
     }
   }
 }

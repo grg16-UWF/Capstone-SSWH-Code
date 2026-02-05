@@ -43,7 +43,8 @@ Select Board **ESP32 Dev Module**
 
 ## TODO
  - [ ] Read sensors
- - - [ ] [esp32-ds18b20 Library](https://github.com/DavidAntliff/esp32-ds18b20?tab=readme-ov-file)
+ - - [x] Read temp sensors: [esp32-ds18b20 Library](https://github.com/DavidAntliff/esp32-ds18b20?tab=readme-ov-file)
+ - - [ ] Read Incline sensor: []
  - [ ] Start matter connection
  - [ ] Send sensor data to matter server
  - [ ] Pump on timer and/or sensor control
