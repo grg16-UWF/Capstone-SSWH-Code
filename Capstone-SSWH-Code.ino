@@ -16,9 +16,10 @@ bool wifi_connected_prev = false;
 #define PIN_INCLINOMETER 6
 
 // OUTPUT PINS 
-#define PIN_RELAY_PUMP 26
-#define PUN_RELAY_ACUTATOR 24
-
+#define PIN_RELAY_PUMP 37
+#define PIN_ARM_ENABLE 26
+#define PIN_ARM_EXTEND 25
+#define PIN_ARM_RETRACT 24
 
 
 // RTC SETUP
