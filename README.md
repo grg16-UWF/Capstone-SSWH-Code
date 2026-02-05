@@ -12,7 +12,7 @@ Program for smart system
 #### Used Pins
 - 4 [IN]: Temp Sensor OneWire Data
 - 6 [IN]: Inclinometer
-- 37 [OUT]: Pump Relay
+- 31 [OUT]: Pump Relay
 - 26 [OUT]: Arm Enable
 - 25 [OUT]: Arm Extend
 - 24 [OUT]: Arm Retract

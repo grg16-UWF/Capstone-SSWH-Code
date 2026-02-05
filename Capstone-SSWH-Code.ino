@@ -16,7 +16,7 @@ bool wifi_connected_prev = false;
 #define PIN_INCLINOMETER 6
 
 // OUTPUT PINS 
-#define PIN_RELAY_PUMP 37
+#define PIN_PUMP 31
 #define PIN_ARM_ENABLE 26
 #define PIN_ARM_EXTEND 25
 #define PIN_ARM_RETRACT 24
@@ -52,7 +52,7 @@ void setup() {
   if( DEBUG ) {
     Serial.begin(115200);
     delay(500);
-    Serial.println("\n[STARTUP].................................");
+    Serial.println("\n\n[STARTUP].............................................");
     Serial.printf("[WIFI] Connecting to '%s' with password '%s'\n", WIFI_SSID, WIFI_PASS);
   }
   // Manual wifi, later let matter setup wifi and use it when available.
