@@ -4,6 +4,8 @@
 
 #include "OneWireESP32.h" // OneWire library
 
+#include "SolarNoon/solar_noon.h"
+
 #define DEBUG true // Enable debug output to serial port
 #define DebugLog if(DEBUG) Serial
 
@@ -38,7 +40,6 @@ uint64_t onewire_active_addrs[ONEWIRE_MAX_DEVICES];
 const char *ONEWIRE_ERROR_TYPES[] = {"", "CRC", "BAD","DC","DRV"};
 
 // Temp sensor OneWire addresses
-
 #define TEMP_INPUT 0x400000005e3c8428
 #define TEMP_COLLECTOR 0xd60000005d671928
 #define TEMP_TANK 0
@@ -46,6 +47,9 @@ const char *ONEWIRE_ERROR_TYPES[] = {"", "CRC", "BAD","DC","DRV"};
 
 float temp_measured[ONEWIRE_MAX_DEVICES];
 
+
+// Target Angle limits
+#define ARM_ANGLE_MAX 45 // maximum angle from directly up for solar tracking axis.
 
 
 void setup() {
@@ -101,9 +105,9 @@ void loop() {
 
   // read angle from inclinometer
 
-  // read or calculate solar noon for today if not already found.
-
-  // calculate offset from solar noon and desired angle
+  // Find desired angle for tracking actuator / arm
+  struct tm angle_time = getLocalTime_no_dst();
+  DebugLog.printf("Target Angle: %3d\n", arm_get_target_angle(angle_time));
 
   // set acutator to correct position based on desired angle and current angle
   
@@ -139,6 +143,29 @@ void time_println() {
     Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
   }
 }
+
+struct tm getLocalTime_no_dst() { // I need non-DST time to avoid having to calculate DST cutoff dates
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    DebugLog.println("Time not available for no-DST (yet)");
+    return timeinfo;
+  }
+  
+  if( timeinfo.tm_isdst != 0 ) { // if DST is active, remove an hour. 
+    if( timeinfo.tm_hour == 0) { // handle day rollover. In the US, DST actiavtes on 2nd Sunday of March @ 2AM, so this *should* never trigger. For this reason I'm not including Month rollover.
+      timeinfo.tm_hour = 23;
+      timeinfo.tm_mday = timeinfo.tm_mday - 1;
+    }
+    timeinfo.tm_hour = timeinfo.tm_hour - 1;
+  }
+  return timeinfo;
+}
+
+int time_mins_into_day( struct tm time ) { // How many minutes into the day is this timestamp
+  return (60 * time.tm_hour) + time.tm_min;
+}
+
+
 
 void rtc_sync() {
   DebugLog.println("[RTC] Starting RTC sync.");
@@ -182,7 +209,6 @@ void temp_read_sensors() {
   }
 }
 
-
 float temp_get_by_addr( uint64_t addr ) {
   for( uint8_t i = 0; i < onewire_num_devices; i++ ) { // loop through all active addresses
     if( onewire_active_addrs[i] == addr ) { // when current addr matches given addr, return measured value at this index.
@@ -191,6 +217,37 @@ float temp_get_by_addr( uint64_t addr ) {
   }
   return -100.0; // if address is not found, return temp as -100 C
 }
+
+
+
+// Arm "acutator" functions
+
+int arm_get_target_angle(struct tm curr_time) {
+  // Calculate the difference between current time and solar noon
+  int curr_mins = time_mins_into_day(curr_time);
+  int day_of_year = curr_time.tm_yday;
+  int solar_noon = SOLAR_NOON_MINUTES[day_of_year];
+  int mins_diff = curr_mins - solar_noon;
+  
+  // Calculate the target angle from the time difference.
+  int angle = mins_diff / 4;
+  DebugLog.printf("[TargetAngle] time=%d, noon[%d]=%d, raw_angle=%d\n", curr_mins, day_of_year, solar_noon, angle);
+
+  // Clamp the target angle
+  if( angle < -ARM_ANGLE_MAX ) {
+    angle = -ARM_ANGLE_MAX;
+  }
+  else if( angle > ARM_ANGLE_MAX ) {
+    angle = ARM_ANGLE_MAX;
+  }
+  
+  return angle;
+}
+
+
+
+
+
 
 
 
