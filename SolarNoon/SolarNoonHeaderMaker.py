@@ -28,16 +28,16 @@ with open(SOURCE_CSV_FILENAME) as csvfile:
 
 		num_days: int = 0
 
-		for row in data:
-			for time in row:
-				# print(time)
-				# print(time_to_int(time))
-				num_days += 1
+		for row in data: # only process the first cell in each row
+			time: str = row[0]
+			# print(time)
+			# print(time_to_int(time))
+			num_days += 1
 
-				if( num_days > 1 ):
-					outfile.write(",")
-				
-				outfile.write(str(time_to_int(time)) )
+			if( num_days > 1 ):
+				outfile.write(",")
+			
+			outfile.write(str(time_to_int(time)) )
  
 		outfile.write("}; \n")
 		print(f"Wrote {num_days} days of data to '{HEADER_FILENAME}'")
