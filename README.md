@@ -12,10 +12,10 @@ Program for smart system
 #### Used Pins
 - 4 [IN]: Temp Sensor OneWire Data
 - 6 [IN]: Inclinometer
-- 31 [OUT]: Pump Relay
-- 26 [OUT]: Arm Enable
-- 25 [OUT]: Arm Extend
-- 24 [OUT]: Arm Retract
+- 30 (GIOP 18) [OUT]: Pump Relay
+- 28 (GIOP 17) [OUT]: Arm Enable
+- 26 (GIOP 04) [OUT]: Arm Extend
+- 27 (GIOP 16) [OUT]: Arm Retract
 
 ### Temp Sensor
 - Red: VCC

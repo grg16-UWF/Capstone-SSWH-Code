@@ -14,14 +14,14 @@
 bool wifi_connected_prev = false;
 
 // INPUT PINS
-#define PIN_TEMP_ONEWIRE 4
+#define PIN_TEMP_ONEWIRE 4 // PIN #
 #define PIN_INCLINOMETER 6
 
-// OUTPUT PINS 
-#define PIN_PUMP 31
-#define PIN_ARM_ENABLE 26
-#define PIN_ARM_EXTEND 25
-#define PIN_ARM_RETRACT 24
+// OUTPUT PINS (GIOP #)
+#define PIN_PUMP 18
+#define PIN_ARM_ENABLE 17
+#define PIN_ARM_EXTEND 4
+#define PIN_ARM_RETRACT 16
 
 
 // RTC SETUP
@@ -49,7 +49,7 @@ float temp_measured[ONEWIRE_MAX_DEVICES];
 
 
 // Target Angle limits
-#define ARM_ANGLE_MAX 45 // maximum angle from directly up for solar tracking axis.
+#define ARM_ANGLE_MAX 60 // maximum angle from directly up for solar tracking axis.
 
 
 void setup() {
