@@ -48,6 +48,7 @@ Boards Manager
 
 Library Manager
  - **esp32-ds18b20** by junkfix `2.0.3`
+ - **Adafruit MPU6050** by Adafruit `2.2.9` and dependencies
 
 Select Board **ESP32 Dev Module**
 

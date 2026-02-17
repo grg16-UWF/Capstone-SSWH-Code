@@ -4,6 +4,9 @@
 
 #include "OneWireESP32.h" // OneWire library
 
+// #include <Adafruit_MPU6050.h> // gyro library
+// #include <Adafruit_Sensor.h>
+
 #include "SolarNoon/solar_noon.h"
 
 #define DEBUG true // Enable debug output to serial port
@@ -33,6 +36,7 @@ const char *ntpServer2 = "time.nist.gov";
 
 // OneWire Setup
 #define ONEWIRE_MAX_DEVICES 5
+int setup_attempts = 2; // how many times to check for OneWire Devices.
 
 OneWire32 onewire(PIN_TEMP_ONEWIRE);
 uint8_t onewire_num_devices = 0;
@@ -46,6 +50,12 @@ const char *ONEWIRE_ERROR_TYPES[] = {"", "CRC", "BAD","DC","DRV"};
 #define TEMP_AIR 0
 
 float temp_measured[ONEWIRE_MAX_DEVICES];
+
+// Gyro setup
+// Adafruit_MPU6050 mpu;
+#define MPU_ACCEL_RANGE MPU6050_RANGE_4_G // Options: 2_G, 4_G, 8_G, 16_G
+#define MPU_GYRO_RANGE MPU6050_RANGE_500_DEG // Options (deg/sec): 250_DEG, 500_DEG, 1000_DEG, 2000_DEG   NOT USED IN THIS PROJECT
+#define MPU_FILTER_BANDWIDTH MPU6050_BAND_21_HZ
 
 
 // Target Angle limits
@@ -63,11 +73,21 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   wifi_connected_prev = false;
 
+  // Setup MPU
+  // if( !mpu.begin() ) {
+  //   DebugLog.println("[MPU] ERROR! Failed to init MPU");
+  // }
+  // mpu.setAccelerometerRange(MPU_ACCEL_RANGE);
+  // mpu.setGyroRange(MPU_GYRO_RANGE);
+  // mpu.setFilterBandwidth(MPU_FILTER_BANDWIDTH);
+  // DebugLog.println("[MPU] Setup complete");
+
+
+  // init matter
+
   if( DEBUG ) {
     Serial.println("setup() ended");
   }
-
-  // init matter
 }
 
 void loop() {
@@ -85,7 +105,7 @@ void loop() {
   
 
 
-  if( onewire_num_devices <= 0 ) { // Find onewire devices if none are detected.
+  if( onewire_num_devices <= 0 && setup_attempts > 0 ) { // Find onewire devices if none are detected.
     temp_setup_onewire(); // only run this once to avoid rearranging address indices
   }
   // list onewire addresses for identifying sensors
@@ -182,11 +202,12 @@ void rtc_sync_callback(struct timeval *t) {
 
 // TEMP SENSOR FUNCTIONS
 void temp_setup_onewire() {
+  setup_attempts--;
   onewire_num_devices = onewire.search(onewire_active_addrs, ONEWIRE_MAX_DEVICES);
 }
 
 void temp_print_onewire_addrs() {
-  if (DEBUG) { // do nothing if not in DEBUG mode.
+  if (DEBUG && onewire_num_devices > 0 ) { // do nothing if not in DEBUG mode or no devs connected
     Serial.println("[OneWire] Addresses:");
     for (uint8_t i = 0; i < onewire_num_devices; i += 1) {
       Serial.printf("%d: 0x%llx,\n", i, onewire_active_addrs[i]);
@@ -195,6 +216,10 @@ void temp_print_onewire_addrs() {
 }
 
 void temp_read_sensors() {
+  if( onewire_num_devices <= 0 ) { // if no temp sensors connected, don't request data. (request sends error if no connected devs).
+    return;
+  }
+
   onewire.request();
   delay(750);
 
@@ -243,6 +268,10 @@ int arm_get_target_angle(struct tm curr_time) {
   
   return angle;
 }
+
+
+
+// Gyroscope functions
 
 
 
