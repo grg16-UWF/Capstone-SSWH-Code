@@ -4,8 +4,8 @@
 
 #include "OneWireESP32.h" // OneWire library
 
-// #include <Adafruit_MPU6050.h> // gyro library
-// #include <Adafruit_Sensor.h>
+#include <Adafruit_MPU6050.h> // gyro library
+#include <Adafruit_Sensor.h>
 
 #include "SolarNoon/solar_noon.h"
 
@@ -52,15 +52,18 @@ const char *ONEWIRE_ERROR_TYPES[] = {"", "CRC", "BAD","DC","DRV"};
 float temp_measured[ONEWIRE_MAX_DEVICES];
 
 // Gyro setup
-// Adafruit_MPU6050 mpu;
+Adafruit_MPU6050 mpu;
 #define MPU_ACCEL_RANGE MPU6050_RANGE_4_G // Options: 2_G, 4_G, 8_G, 16_G
 #define MPU_GYRO_RANGE MPU6050_RANGE_500_DEG // Options (deg/sec): 250_DEG, 500_DEG, 1000_DEG, 2000_DEG   NOT USED IN THIS PROJECT
-#define MPU_FILTER_BANDWIDTH MPU6050_BAND_21_HZ
+#define MPU_FILTER_BANDWIDTH MPU6050_BAND_5_HZ
 
+const float ACCEL_OFFSET[] = {0.141147, 0.147745, 0.643307}; // { X, Y, Z }
+float accel_raw_iteravg[] = {0, 0, 0}; // store an iterative average of accel measurements
+uint16_t mpu_num_samples = 0;
 
 // Target Angle limits
 #define ARM_ANGLE_MAX 60 // maximum angle from directly up for solar tracking axis.
-
+#define ARM_ANGLE_THRESHOLD 5 // how far from the target the current angle can be before moving.
 
 void setup() {
   if( DEBUG ) {
@@ -74,13 +77,13 @@ void setup() {
   wifi_connected_prev = false;
 
   // Setup MPU
-  // if( !mpu.begin() ) {
-  //   DebugLog.println("[MPU] ERROR! Failed to init MPU");
-  // }
-  // mpu.setAccelerometerRange(MPU_ACCEL_RANGE);
-  // mpu.setGyroRange(MPU_GYRO_RANGE);
-  // mpu.setFilterBandwidth(MPU_FILTER_BANDWIDTH);
-  // DebugLog.println("[MPU] Setup complete");
+  if( !mpu.begin() ) {
+    DebugLog.println("[MPU] ERROR! Failed to init MPU");
+  }
+  mpu.setAccelerometerRange(MPU_ACCEL_RANGE);
+  mpu.setGyroRange(MPU_GYRO_RANGE);
+  mpu.setFilterBandwidth(MPU_FILTER_BANDWIDTH);
+  DebugLog.println("[MPU] Setup complete");
 
 
   // init matter
@@ -122,12 +125,12 @@ void loop() {
 
   // enable/disable pump if needed (check time since last toggle)
 
-
-  // read angle from inclinometer
+  // get current arm angle from MPU
+  int current_angle = mpu_get_current_angle();
+  DebugLog.printf("Current Angle: %d\n", current_angle);
 
   // Find desired angle for tracking actuator / arm
-  struct tm angle_time = getLocalTime_no_dst();
-  DebugLog.printf("Target Angle: %3d\n", arm_get_target_angle(angle_time));
+  DebugLog.printf("Angle change: %d\n", arm_get_movement_angle(current_angle) );
 
   // set acutator to correct position based on desired angle and current angle
   
@@ -244,7 +247,6 @@ float temp_get_by_addr( uint64_t addr ) {
 }
 
 
-
 // Arm "acutator" functions
 
 int arm_get_target_angle(struct tm curr_time) {
@@ -256,7 +258,7 @@ int arm_get_target_angle(struct tm curr_time) {
   
   // Calculate the target angle from the time difference.
   int angle = mins_diff / 4;
-  DebugLog.printf("[TargetAngle] time=%d, noon[%d]=%d, raw_angle=%d\n", curr_mins, day_of_year, solar_noon, angle);
+  // DebugLog.printf("[TargetAngle] time=%d, noon[%d]=%d, raw_angle=%d\n", curr_mins, day_of_year, solar_noon, angle);
 
   // Clamp the target angle
   if( angle < -ARM_ANGLE_MAX ) {
@@ -269,13 +271,65 @@ int arm_get_target_angle(struct tm curr_time) {
   return angle;
 }
 
+int arm_get_movement_angle(int current_angle) { // how many degrees should the arm move to reach target
+  int target_angle = arm_get_target_angle( getLocalTime_no_dst() );
+
+  DebugLog.printf("[Arm Angle]: Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
+
+  int diff = target_angle - current_angle;
+
+  if( diff < ARM_ANGLE_THRESHOLD && diff > -ARM_ANGLE_THRESHOLD ) {
+    diff = 0;
+  }
+  return diff;
+}
 
 
 // Gyroscope functions
 
+int mpu_get_current_angle() {
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  // log uncalibrated values
+  // mpu_calibration(a.acceleration.x, a.acceleration.y, a.acceleration.z);
+
+  // apply calibration offsets
+  float ax = a.acceleration.x - ACCEL_OFFSET[0];
+  float ay = a.acceleration.y - ACCEL_OFFSET[1];
+  float az = a.acceleration.z - ACCEL_OFFSET[2];
+
+  // DebugLog.printf("[MPU] Values: {%f, %f, %f}\n", ax, ay, az);
 
 
+  // convert to roll and pitch
+  float roll = atan2(ay, az) * 180.0/PI;
+  float pitch = atan2(-ax, sqrt(ay*ay + az*az)) * 180.0/PI;
 
+  DebugLog.printf("[MPU] Roll: %7.3f, Pitch: %7.3f\n", roll, pitch);
+
+  return (int)pitch;
+}
+
+void mpu_calibration( float x, float y, float z ) {
+  mpu_num_samples++;
+  z -= 9.81;
+  DebugLog.printf("[MPU] Raw: {%f, %f, %f}\n", x, y, z);
+
+  // calculate moving average
+  if(mpu_num_samples == 1 ) {
+    accel_raw_iteravg[0] = x;
+    accel_raw_iteravg[1] = y;
+    accel_raw_iteravg[2] = z;
+  }
+  else {
+    accel_raw_iteravg[0] = ( accel_raw_iteravg[0]*(mpu_num_samples-1) + x ) / mpu_num_samples; // X
+    accel_raw_iteravg[1] = ( accel_raw_iteravg[1]*(mpu_num_samples-1) + y ) / mpu_num_samples; // Y
+    accel_raw_iteravg[2] = ( accel_raw_iteravg[2]*(mpu_num_samples-1) + z ) / mpu_num_samples; // Z
+  }
+  
+  DebugLog.printf("[MPU] Raw iterative average (%d samples): {%f, %f, %f}\n", mpu_num_samples, accel_raw_iteravg[0], accel_raw_iteravg[1], accel_raw_iteravg[2]);
+}
 
 
 

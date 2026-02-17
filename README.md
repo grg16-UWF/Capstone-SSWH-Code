@@ -66,6 +66,9 @@ Select Board **ESP32 Dev Module**
  4. Edit `SolarNoonHeaderMaker.py` and update `SOURCE_CSV_FILENAME` if changed from default `"SolarNoon_2024.csv"`
  5. Execute the python script with `python3 SolarNoonHeaderMaker.py` while in the SolarNoon folder to build `solar_noon.h`
 
+## Rotational Axes
+![Rotational Axes](rotational_axes.jpg)
+
 ## TODO
  - [ ] Read sensors
  - - [x] Read temp sensors: [esp32-ds18b20 Library](https://github.com/DavidAntliff/esp32-ds18b20?tab=readme-ov-file)
