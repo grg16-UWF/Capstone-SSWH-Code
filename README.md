@@ -16,6 +16,8 @@ Program for smart system
 - 28 (GIOP 17) [OUT]: Arm Enable
 - 26 (GIOP 04) [OUT]: Arm Extend
 - 27 (GIOP 16) [OUT]: Arm Retract
+- 33 (GIOP 21) [OUT]: Gyro SDA
+- 36 (GIOP 22) [OUT]: Gyro SCL
 
 ### Temp Sensor
 - Red: VCC
@@ -27,6 +29,14 @@ Program for smart system
 - ENA: Enable motor
 - IN1: Direction 1
 - IN2: Direction 2
+
+### Gyroscope - MPU6050
+- SCL: Serial Clock
+- SDA: Serial Data
+- XDA: Aux Data (UNUSED)
+- XCL: Aux Clock (UNUSED)
+- AD0: Address select (May need to GND if address problems)
+- INT: Interrupt to other dev (UNUSED)
 
 ## Adruino IDE Setup
 
