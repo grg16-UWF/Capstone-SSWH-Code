@@ -64,14 +64,17 @@ uint16_t mpu_num_samples = 0;
 // Target Angle limits
 #define ARM_ANGLE_MAX 60 // maximum angle from directly up for solar tracking axis.
 #define ARM_ANGLE_THRESHOLD 5 // how far from the target the current angle can be before moving.
+#define ARM_MOVE_POLLING_PERIOD 100 // (ms) how often the arm should check angle while moving
 
 void setup() {
   if( DEBUG ) {
     Serial.begin(115200);
+    Serial.println("");
     delay(500);
     Serial.println("\n\n[STARTUP].............................................");
     Serial.printf("[WIFI] Connecting to '%s' with password '%s'\n", WIFI_SSID, WIFI_PASS);
   }
+
   // Manual wifi, later let matter setup wifi and use it when available.
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   wifi_connected_prev = false;
@@ -85,12 +88,22 @@ void setup() {
   mpu.setFilterBandwidth(MPU_FILTER_BANDWIDTH);
   DebugLog.println("[MPU] Setup complete");
 
+  // Setup pump and arm pins
+  pinMode(PIN_PUMP, OUTPUT);
+  digitalWrite(PIN_PUMP, LOW);
+
+  pinMode(PIN_ARM_ENABLE, OUTPUT);
+  digitalWrite(PIN_ARM_ENABLE, LOW);
+
+  pinMode(PIN_ARM_EXTEND, OUTPUT);
+  digitalWrite(PIN_ARM_EXTEND, LOW);
+
+  pinMode(PIN_ARM_RETRACT, OUTPUT);
+  digitalWrite(PIN_ARM_RETRACT, LOW);
 
   // init matter
 
-  if( DEBUG ) {
-    Serial.println("setup() ended");
-  }
+  DebugLog.println("setup() ended");
 }
 
 void loop() {
@@ -127,12 +140,20 @@ void loop() {
 
   // get current arm angle from MPU
   int current_angle = mpu_get_current_angle();
-  DebugLog.printf("Current Angle: %d\n", current_angle);
 
-  // Find desired angle for tracking actuator / arm
-  DebugLog.printf("Angle change: %d\n", arm_get_movement_angle(current_angle) );
+  // Find target angle for tracking actuator / arm
+  int target_angle = arm_get_target_angle(getLocalTime_no_dst());
+  DebugLog.printf("Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
 
   // set acutator to correct position based on desired angle and current angle
+  if( arm_check_move_needed(current_angle, target_angle) ) {
+    DebugLog.println("Threshold crossed, moving to new angle...");
+    arm_move(target_angle);
+  }
+  else {
+    DebugLog.println("No move needed.");
+  }
+
   
 }
 
@@ -271,17 +292,54 @@ int arm_get_target_angle(struct tm curr_time) {
   return angle;
 }
 
-int arm_get_movement_angle(int current_angle) { // how many degrees should the arm move to reach target
-  int target_angle = arm_get_target_angle( getLocalTime_no_dst() );
-
-  DebugLog.printf("[Arm Angle]: Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
-
+bool arm_check_move_needed(int current_angle, int target_angle) { // how many degrees should the arm move to reach target
   int diff = target_angle - current_angle;
 
-  if( diff < ARM_ANGLE_THRESHOLD && diff > -ARM_ANGLE_THRESHOLD ) {
-    diff = 0;
+  if( diff < ARM_ANGLE_THRESHOLD && diff > -ARM_ANGLE_THRESHOLD ) { // if diff is less than threshold, dont need move
+    return false;
   }
-  return diff;
+  return true;
+}
+
+void arm_move( const int target_angle ) {
+  
+  // prep pins for arm movement
+  digitalWrite(PIN_ARM_RETRACT, LOW);
+  digitalWrite(PIN_ARM_EXTEND, LOW);
+  digitalWrite(PIN_ARM_ENABLE, HIGH);
+  
+  int diff; // declare diff for use in while condition
+  do {
+    // find angles and diff
+    int current_angle = mpu_get_current_angle();
+    diff = target_angle - current_angle;
+    DebugLog.printf("[Arm Move]: Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
+
+    
+    if( diff > 0 ) { // extend
+      DebugLog.println("[Arm Move] Extending");
+      digitalWrite(PIN_ARM_RETRACT, LOW);
+      digitalWrite(PIN_ARM_EXTEND, HIGH);
+    }
+    else if(diff < 0) { // retract
+      DebugLog.println("[Arm Move] Retracting");
+      digitalWrite(PIN_ARM_EXTEND, LOW);
+      digitalWrite(PIN_ARM_RETRACT, HIGH);
+    }
+    else { // diff == 0, target angle reached, break loop to skip delay
+      break;
+    }
+
+    delay(ARM_MOVE_POLLING_PERIOD); // wait for arm to move
+
+  } while( diff != 0 );
+
+  // turn off arm
+  digitalWrite(PIN_ARM_ENABLE, LOW);
+  digitalWrite(PIN_ARM_RETRACT, LOW);
+  digitalWrite(PIN_ARM_EXTEND, LOW);
+
+  DebugLog.printf("[Arm Move] Reached %d\n", target_angle);
 }
 
 
@@ -303,10 +361,10 @@ int mpu_get_current_angle() {
 
 
   // convert to roll and pitch
-  float roll = atan2(ay, az) * 180.0/PI;
+  // float roll = atan2(ay, az) * 180.0/PI;
   float pitch = atan2(-ax, sqrt(ay*ay + az*az)) * 180.0/PI;
 
-  DebugLog.printf("[MPU] Roll: %7.3f, Pitch: %7.3f\n", roll, pitch);
+  // DebugLog.printf("[MPU] Roll: %7.3f, Pitch: %7.3f\n", roll, pitch);
 
   return (int)pitch;
 }
@@ -330,6 +388,10 @@ void mpu_calibration( float x, float y, float z ) {
   
   DebugLog.printf("[MPU] Raw iterative average (%d samples): {%f, %f, %f}\n", mpu_num_samples, accel_raw_iteravg[0], accel_raw_iteravg[1], accel_raw_iteravg[2]);
 }
+
+
+
+
 
 
 
