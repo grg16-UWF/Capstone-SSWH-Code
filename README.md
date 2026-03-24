@@ -70,12 +70,13 @@ Select Board **ESP32 Dev Module**
 ![Rotational Axes](rotational_axes.jpg)
 
 ## TODO
- - [ ] Read sensors
+ - [x] Read sensors
  - - [x] Read temp sensors: [esp32-ds18b20 Library](https://github.com/DavidAntliff/esp32-ds18b20?tab=readme-ov-file)
- - - [ ] Read Incline sensor: []
+ - - [x] Read Incline sensor
  - [ ] Start matter connection
  - [ ] Send sensor data to matter server
- - [ ] Pump on timer and/or sensor control
- - [ ] Tracking Acutator 15 deg/hr based on solar noon array
- - - [ ] need local time somehow (WiFi? Builtin?)
- - - [ ] use inclinometer / gyroscope for actual angle
+ - [x] Pump on timer and/or sensor control
+ - - [ ] Extended testing on sunrise/sunset? Probably need to fake time readings.
+ - [x] Tracking Acutator 15 deg/hr based on solar noon array
+ - - [x] need local time somehow (WiFi? Builtin?)
+ - - [x] use inclinometer / gyroscope for actual angle

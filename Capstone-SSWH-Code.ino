@@ -62,9 +62,22 @@ float accel_raw_iteravg[] = {0, 0, 0}; // store an iterative average of accel me
 uint16_t mpu_num_samples = 0;
 
 // Target Angle limits
+#define ARM_ENABLED false // allow disabling the arm for testing
 #define ARM_ANGLE_MAX 60 // maximum angle from directly up for solar tracking axis.
 #define ARM_ANGLE_THRESHOLD 5 // how far from the target the current angle can be before moving.
 #define ARM_MOVE_POLLING_PERIOD 100 // (ms) how often the arm should check angle while moving
+
+// PUMP SETUP
+#define PUMP_DUTY_ACTIVE 1    // how many minutes the pump is active per cycle.
+#define PUMP_DUTY_INACTIVE 2  // how many minutes the pump is inactive per cycle.
+#define PUMP_ENABLE_TIME 330   // (5:30AM) what time the pump should start cycling. Should be at or soon before sunrise.
+#define PUMP_DISABLE_TIME 1230 // (8:30PM) what time the pump should stop cycling. Should be soon after sunset.
+
+// PUMP state
+bool pump_active = 0;       // 1: pump is active, 0: pump is inactive
+int pump_next_active = 0;   // time when the pump should turn on
+int pump_next_inactive = 0; // time when the pump should turn off
+bool pump_suspended_night = 1; // whether the pump is currently kept off for nighttime
 
 void setup() {
   if( DEBUG ) {
@@ -147,13 +160,20 @@ void loop() {
 
   // set acutator to correct position based on desired angle and current angle
   if( arm_check_move_needed(current_angle, target_angle) ) {
-    DebugLog.println("Threshold crossed, moving to new angle...");
-    arm_move(target_angle);
+    if( ARM_ENABLED ) {
+      DebugLog.println("Threshold crossed, moving to new angle...");
+      arm_move(target_angle);
+    }
+    else {
+      DebugLog.println("Arm is disabled.");
+    }
   }
   else {
     DebugLog.println("No move needed.");
   }
 
+  // control pump
+  pumpController();
   
 }
 
@@ -269,7 +289,6 @@ float temp_get_by_addr( uint64_t addr ) {
 
 
 // Arm "acutator" functions
-
 int arm_get_target_angle(struct tm curr_time) {
   // Calculate the difference between current time and solar noon
   int curr_mins = time_mins_into_day(curr_time);
@@ -344,7 +363,6 @@ void arm_move( const int target_angle ) {
 
 
 // Gyroscope functions
-
 int mpu_get_current_angle() {
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
@@ -390,8 +408,43 @@ void mpu_calibration( float x, float y, float z ) {
 }
 
 
+// Pump functions
+void pumpController() {
+  int time = time_mins_into_day(getLocalTime_no_dst()); // time in minutes since midnight
 
+  if( pump_suspended_night && time >= PUMP_ENABLE_TIME ) { // if pump is suspended and its time to enable it, then unsuspend, activate, and schedule a deactivation.
+    pump_suspended_night = 0;
+    digitalWrite(PIN_PUMP, HIGH);
+    pump_next_inactive = time + PUMP_DUTY_ACTIVE;
+    pump_active = 1;
+    DebugLog.printf("[PUMP] Unsuspending and activating, will turn off at %d.\n", pump_next_inactive);
+  }
 
+  if( pump_suspended_night ) { // if the pump is suspended, leave it and do nothing.
+    return;
+  }
+
+  if( (time >= PUMP_DISABLE_TIME || time < PUMP_ENABLE_TIME) && !pump_suspended_night) { // if time is outside of enable times AND pump is not suspended, turn off and suspend the pump.
+    digitalWrite(PIN_PUMP, LOW);
+    pump_active = 0;
+    pump_suspended_night = 1;
+    DebugLog.println("[PUMP] Suspended for the night.");
+  }
+
+  // Regular pump operation
+  if( pump_active && time >= pump_next_inactive ) { // if pump on AND deactivate time reached, turn off pump and set time for activation.
+    digitalWrite(PIN_PUMP, LOW);
+    pump_next_active = time + PUMP_DUTY_INACTIVE;
+    pump_active = 0;
+    DebugLog.printf("[PUMP] Turned off, will turn on at %d.\n", pump_next_active);
+  }
+  else if( !pump_active && time >= pump_next_active ) { // if pump off AND activation time reached, turn on pump and set deactivate time
+    digitalWrite(PIN_PUMP, HIGH);
+    pump_next_inactive = time + PUMP_DUTY_ACTIVE;
+    pump_active = 1;
+    DebugLog.printf("[PUMP] Turned on, will turn off at %d.\n", pump_next_inactive);
+  }
+}
 
 
 
