@@ -17,8 +17,7 @@
 bool wifi_connected_prev = false;
 
 // INPUT PINS
-#define PIN_TEMP_ONEWIRE 4 // PIN #
-#define PIN_INCLINOMETER 6
+#define PIN_TEMP_ONEWIRE 19 // GIOP 19
 
 // OUTPUT PINS (GIOP #)
 #define PIN_PUMP 18
@@ -46,8 +45,8 @@ const char *ONEWIRE_ERROR_TYPES[] = {"", "CRC", "BAD","DC","DRV"};
 // Temp sensor OneWire addresses
 #define TEMP_INPUT 0x400000005e3c8428
 #define TEMP_COLLECTOR 0xd60000005d671928
-#define TEMP_TANK 0
-#define TEMP_AIR 0
+#define TEMP_TANK 0x850000005d35e828
+#define TEMP_AIR 0x990000005d00e528
 
 float temp_measured[ONEWIRE_MAX_DEVICES];
 
@@ -149,30 +148,10 @@ void loop() {
   DebugLog.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
   DebugLog.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
 
-  // enable/disable pump if needed (check time since last toggle)
+  // control the arm.
+  armController();
 
-  // get current arm angle from MPU
-  int current_angle = mpu_get_current_angle();
-
-  // Find target angle for tracking actuator / arm
-  int target_angle = arm_get_target_angle(getLocalTime_no_dst());
-  DebugLog.printf("Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
-
-  // set acutator to correct position based on desired angle and current angle
-  if( arm_check_move_needed(current_angle, target_angle) ) {
-    if( ARM_ENABLED ) {
-      DebugLog.println("Threshold crossed, moving to new angle...");
-      arm_move(target_angle);
-    }
-    else {
-      DebugLog.println("Arm is disabled.");
-    }
-  }
-  else {
-    DebugLog.println("No move needed.");
-  }
-
-  // control pump
+  // control the pump.
   pumpController();
   
 }
@@ -211,7 +190,7 @@ void time_println() {
 struct tm getLocalTime_no_dst() { // I need non-DST time to avoid having to calculate DST cutoff dates
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
-    DebugLog.println("Time not available for no-DST (yet)");
+    DebugLog.println("[getLocalTime_no_dst] Time not available (yet)");
     return timeinfo;
   }
   
@@ -229,6 +208,10 @@ int time_mins_into_day( struct tm time ) { // How many minutes into the day is t
   return (60 * time.tm_hour) + time.tm_min;
 }
 
+// Get the time as minutes since midnight
+int get_time() { 
+  return time_mins_into_day(getLocalTime_no_dst());
+}
 
 
 void rtc_sync() {
@@ -248,6 +231,7 @@ void rtc_sync_callback(struct timeval *t) {
 void temp_setup_onewire() {
   setup_attempts--;
   onewire_num_devices = onewire.search(onewire_active_addrs, ONEWIRE_MAX_DEVICES);
+  DebugLog.printf("[TEMP] onewire.search() found %d devices.\n", onewire_num_devices);
 }
 
 void temp_print_onewire_addrs() {
@@ -273,7 +257,7 @@ void temp_read_sensors() {
       DebugLog.printf("[OneWire] ERROR: 0x%llx errored: %s\n", onewire_active_addrs[i], ONEWIRE_ERROR_TYPES[error]);
     }
     else {
-      DebugLog.printf("[OneWire] DATA: 0x%llx : %f\n", onewire_active_addrs[i], temp_measured[i]);
+      // DebugLog.printf("[OneWire] DATA: 0x%llx : %f\n", onewire_active_addrs[i], temp_measured[i]);
     }
   }
 }
@@ -289,8 +273,9 @@ float temp_get_by_addr( uint64_t addr ) {
 
 
 // Arm "acutator" functions
-int arm_get_target_angle(struct tm curr_time) {
+int arm_get_target_angle() {
   // Calculate the difference between current time and solar noon
+  struct tm curr_time = getLocalTime_no_dst();
   int curr_mins = time_mins_into_day(curr_time);
   int day_of_year = curr_time.tm_yday;
   int solar_noon = SOLAR_NOON_MINUTES[day_of_year];
@@ -361,6 +346,31 @@ void arm_move( const int target_angle ) {
   DebugLog.printf("[Arm Move] Reached %d\n", target_angle);
 }
 
+void armController() {
+  
+  // get current arm angle from MPU
+  int current_angle = mpu_get_current_angle();
+
+  // Find target angle for tracking actuator / arm
+  int target_angle = arm_get_target_angle();
+  DebugLog.printf("Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
+  
+  // don't attempt to move the arm if it's disabled.
+  if( !ARM_ENABLED ) {
+    DebugLog.println("[ARM] Arm is disabled.");
+    return;
+  }
+
+  // set acutator to correct position based on desired angle and current angle
+  if( arm_check_move_needed(current_angle, target_angle) ) {
+    DebugLog.println("Threshold crossed, moving to new angle...");
+    arm_move(target_angle);
+  }
+  else {
+    DebugLog.println("No move needed.");
+  }
+}
+
 
 // Gyroscope functions
 int mpu_get_current_angle() {
@@ -410,7 +420,7 @@ void mpu_calibration( float x, float y, float z ) {
 
 // Pump functions
 void pumpController() {
-  int time = time_mins_into_day(getLocalTime_no_dst()); // time in minutes since midnight
+  int time = get_time(); // time in minutes since midnight
 
   if( pump_suspended_night && time >= PUMP_ENABLE_TIME ) { // if pump is suspended and its time to enable it, then unsuspend, activate, and schedule a deactivation.
     pump_suspended_night = 0;

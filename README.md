@@ -7,17 +7,16 @@ Program for smart system
 
 ## Pinout
 ### ESP32
-![Pinout](ESP32_pinout.jpg)
+![Pinout](ESP32_pinout.png)
 
 #### Used Pins
-- 4 [IN]: Temp Sensor OneWire Data
-- 6 [IN]: Inclinometer
+- 36 (GIOP 22) [OUT]: Gyro SCL
+- 33 (GIOP 21) [OUT]: Gyro SDA
+- 31  (GIOP 19) [IN]: Temp Sensor OneWire Data
 - 30 (GIOP 18) [OUT]: Pump Relay
 - 28 (GIOP 17) [OUT]: Arm Enable
-- 26 (GIOP 04) [OUT]: Arm Extend
 - 27 (GIOP 16) [OUT]: Arm Retract
-- 33 (GIOP 21) [OUT]: Gyro SDA
-- 36 (GIOP 22) [OUT]: Gyro SCL
+- 26 (GIOP 04) [OUT]: Arm Extend
 
 ### Temp Sensor
 - Red: VCC
