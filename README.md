@@ -72,8 +72,8 @@ Select Board **ESP32 Dev Module**
  - [x] Read sensors
  - - [x] Read temp sensors: [esp32-ds18b20 Library](https://github.com/DavidAntliff/esp32-ds18b20?tab=readme-ov-file)
  - - [x] Read Incline sensor
- - [ ] Start matter connection
- - [ ] Send sensor data to matter server
+ - [x] Start matter connection
+ - [x] Send sensor data to matter server
  - [x] Pump on timer and/or sensor control
  - - [ ] Extended testing on sunrise/sunset? Probably need to fake time readings.
  - [x] Tracking Acutator 15 deg/hr based on solar noon array

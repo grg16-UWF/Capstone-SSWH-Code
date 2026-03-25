@@ -7,6 +7,8 @@
 #include <Adafruit_MPU6050.h> // gyro library
 #include <Adafruit_Sensor.h>
 
+#include <Matter.h>
+
 #include "SolarNoon/solar_noon.h"
 
 #define DEBUG true // Enable debug output to serial port
@@ -78,6 +80,13 @@ int pump_next_active = 0;   // time when the pump should turn on
 int pump_next_inactive = 0; // time when the pump should turn off
 bool pump_suspended_night = 1; // whether the pump is currently kept off for nighttime
 
+// Matter endpoint setup
+MatterTemperatureSensor matter_temp_input; // temp sensor 1
+MatterTemperatureSensor matter_temp_collector; // temp sensor 2
+MatterTemperatureSensor matter_temp_tank; // temp sensor 3
+MatterTemperatureSensor matter_temp_air; // temp sensor 4
+MatterContactSensor matter_pump_active; // Contact Sensor 1
+
 void setup() {
   if( DEBUG ) {
     Serial.begin(115200);
@@ -113,13 +122,30 @@ void setup() {
   pinMode(PIN_ARM_RETRACT, OUTPUT);
   digitalWrite(PIN_ARM_RETRACT, LOW);
 
-  // init matter
+  // init matter endpoints
+  matter_temp_input.begin();
+  matter_temp_collector.begin();
+  matter_temp_tank.begin();
+  matter_temp_air.begin();
+  matter_pump_active.begin();
+
+  // init Matter
+  Matter.begin();
+
+  Matter.onEvent([](matterEvent_t event, const void *data) {
+    if (event == MATTER_COMMISSIONING_COMPLETE) {
+      Serial.println("[MATTER] Successfully commissioned!");
+    }
+  });
+
+  if (!Matter.isDeviceCommissioned()) {
+    Serial.printf("Manual pairing code: %s\n", Matter.getManualPairingCode().c_str());
+  }
 
   DebugLog.println("setup() ended");
 }
 
 void loop() {
-  delay(2000);
   DebugLog.println();
   time_println();
 
@@ -147,13 +173,15 @@ void loop() {
   DebugLog.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
   DebugLog.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
   DebugLog.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
+  matter_update_temp_sensors();
 
   // control the arm.
   armController();
 
   // control the pump.
-  pumpController();
+  pump_controller();
   
+  delay(5000);
 }
 
 
@@ -255,6 +283,7 @@ void temp_read_sensors() {
     uint8_t error = onewire.getTemp(onewire_active_addrs[i], temp_measured[i]);
     if( error ) {
       DebugLog.printf("[OneWire] ERROR: 0x%llx errored: %s\n", onewire_active_addrs[i], ONEWIRE_ERROR_TYPES[error]);
+      temp_measured[i] = -100.0;
     }
     else {
       // DebugLog.printf("[OneWire] DATA: 0x%llx : %f\n", onewire_active_addrs[i], temp_measured[i]);
@@ -419,7 +448,7 @@ void mpu_calibration( float x, float y, float z ) {
 
 
 // Pump functions
-void pumpController() {
+void pump_controller() {
   int time = get_time(); // time in minutes since midnight
 
   if( pump_suspended_night && time >= PUMP_ENABLE_TIME ) { // if pump is suspended and its time to enable it, then unsuspend, activate, and schedule a deactivation.
@@ -427,6 +456,8 @@ void pumpController() {
     digitalWrite(PIN_PUMP, HIGH);
     pump_next_inactive = time + PUMP_DUTY_ACTIVE;
     pump_active = 1;
+    matter_pump_active.setContact(pump_active);
+    
     DebugLog.printf("[PUMP] Unsuspending and activating, will turn off at %d.\n", pump_next_inactive);
   }
 
@@ -438,6 +469,7 @@ void pumpController() {
     digitalWrite(PIN_PUMP, LOW);
     pump_active = 0;
     pump_suspended_night = 1;
+    matter_pump_active.setContact(pump_active);
     DebugLog.println("[PUMP] Suspended for the night.");
   }
 
@@ -454,8 +486,17 @@ void pumpController() {
     pump_active = 1;
     DebugLog.printf("[PUMP] Turned on, will turn off at %d.\n", pump_next_inactive);
   }
+  matter_pump_active.setContact(pump_active);
 }
 
+
+// Matter functions
+void matter_update_temp_sensors() {
+  matter_temp_input.setTemperature(temp_get_by_addr(TEMP_INPUT));
+  matter_temp_collector.setTemperature(temp_get_by_addr(TEMP_COLLECTOR));
+  matter_temp_tank.setTemperature(temp_get_by_addr(TEMP_TANK));
+  matter_temp_air.setTemperature(temp_get_by_addr(TEMP_AIR));
+}
 
 
 
