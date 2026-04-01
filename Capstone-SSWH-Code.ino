@@ -520,7 +520,7 @@ void matter_update_temp_sensors() {
   matter_temp_input.setTemperature(temp_get_by_addr(TEMP_INPUT));
   matter_temp_collector.setTemperature(temp_get_by_addr(TEMP_COLLECTOR));
   matter_temp_tank.setTemperature(temp_get_by_addr(TEMP_TANK));
-  matter_arm_angle.setTemperature(temp_get_by_addr(TEMP_AIR));
+  // matter_arm_angle.setTemperature(temp_get_by_addr(TEMP_AIR));
 }
 
 
