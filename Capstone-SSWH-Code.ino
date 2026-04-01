@@ -61,6 +61,7 @@ Adafruit_MPU6050 mpu;
 const float ACCEL_OFFSET[] = {0.141147, 0.147745, 0.643307}; // { X, Y, Z }
 float accel_raw_iteravg[] = {0, 0, 0}; // store an iterative average of accel measurements
 uint16_t mpu_num_samples = 0;
+int mpu_errored = 0; // if the mpu is errored, prevent using its invalid data
 
 // Target Angle limits
 #define ARM_ENABLED true // allow disabling the arm for testing
@@ -106,11 +107,15 @@ void setup() {
   // Setup MPU
   if( !mpu.begin() ) {
     DebugLog.println("[MPU] ERROR! Failed to init MPU");
+    mpu_errored = 1;
   }
-  mpu.setAccelerometerRange(MPU_ACCEL_RANGE);
-  mpu.setGyroRange(MPU_GYRO_RANGE);
-  mpu.setFilterBandwidth(MPU_FILTER_BANDWIDTH);
-  DebugLog.println("[MPU] Setup complete");
+  else {
+    mpu.setAccelerometerRange(MPU_ACCEL_RANGE);
+    mpu.setGyroRange(MPU_GYRO_RANGE);
+    mpu.setFilterBandwidth(MPU_FILTER_BANDWIDTH);
+    DebugLog.println("[MPU] Setup complete");
+    mpu_errored = 0;
+  }
 
   // Setup pump and arm pins
   pinMode(PIN_PUMP, OUTPUT);
@@ -385,12 +390,16 @@ void arm_move( const int target_angle ) {
 }
 
 void armController() {
+  // Find target angle for tracking actuator / arm
+  int target_angle = arm_get_target_angle();
   
+  if( mpu_errored ) { // if (mpu_errored != 0 )
+    DebugLog.printf("[ARM]: MPU in errored state, not moving arm. Target Angle: %d\n", target_angle);
+  }
+
   // get current arm angle from MPU
   int current_angle = mpu_get_current_angle();
 
-  // Find target angle for tracking actuator / arm
-  int target_angle = arm_get_target_angle();
   DebugLog.printf("Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
   
   // don't attempt to move the arm if it's disabled.
@@ -412,6 +421,10 @@ void armController() {
 
 // Gyroscope functions
 int mpu_get_current_angle() {
+  if( mpu_errored ) { // if (mpu_errored != 0 )
+    return 0;
+  }
+
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
 
