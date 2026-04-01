@@ -88,7 +88,7 @@ bool pump_suspended_night = 1; // whether the pump is currently kept off for nig
 MatterTemperatureSensor matter_temp_input; // temp sensor 1
 MatterTemperatureSensor matter_temp_collector; // temp sensor 2
 MatterTemperatureSensor matter_temp_tank; // temp sensor 3
-MatterTemperatureSensor matter_temp_air; // temp sensor 4
+MatterTemperatureSensor matter_arm_angle; // temp sensor 4
 MatterContactSensor matter_pump_active; // Contact Sensor 1
 
 void setup() {
@@ -134,7 +134,7 @@ void setup() {
   matter_temp_input.begin();
   matter_temp_collector.begin();
   matter_temp_tank.begin();
-  matter_temp_air.begin();
+  matter_arm_angle.begin();
   matter_pump_active.begin();
 
   // init Matter
@@ -361,6 +361,8 @@ void arm_move( const int target_angle ) {
     int current_angle = mpu_get_current_angle();
     diff = target_angle - current_angle;
     DebugLog.printf("[Arm Move]: Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
+    
+    matter_arm_angle.setTemperature(current_angle);
 
     
     if( diff > 0 ) { // extend
@@ -416,6 +418,7 @@ void armController() {
   else {
     DebugLog.println("No move needed.");
   }
+  matter_arm_angle.setTemperature(current_angle);
 }
 
 
@@ -517,7 +520,7 @@ void matter_update_temp_sensors() {
   matter_temp_input.setTemperature(temp_get_by_addr(TEMP_INPUT));
   matter_temp_collector.setTemperature(temp_get_by_addr(TEMP_COLLECTOR));
   matter_temp_tank.setTemperature(temp_get_by_addr(TEMP_TANK));
-  matter_temp_air.setTemperature(temp_get_by_addr(TEMP_AIR));
+  matter_arm_angle.setTemperature(temp_get_by_addr(TEMP_AIR));
 }
 
 
