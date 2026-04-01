@@ -63,16 +63,19 @@ float accel_raw_iteravg[] = {0, 0, 0}; // store an iterative average of accel me
 uint16_t mpu_num_samples = 0;
 
 // Target Angle limits
-#define ARM_ENABLED false // allow disabling the arm for testing
-#define ARM_ANGLE_MAX 60 // maximum angle from directly up for solar tracking axis.
+#define ARM_ENABLED true // allow disabling the arm for testing
+#define ARM_ANGLE_MAX 40 // maximum angle for solar tracking (facing west)
+#define ARM_ANGLE_MIN -40 // minimum angle for solar tracking (facing east)
 #define ARM_ANGLE_THRESHOLD 5 // how far from the target the current angle can be before moving.
 #define ARM_MOVE_POLLING_PERIOD 100 // (ms) how often the arm should check angle while moving
 
 // PUMP SETUP
 #define PUMP_DUTY_ACTIVE 1    // how many minutes the pump is active per cycle.
 #define PUMP_DUTY_INACTIVE 2  // how many minutes the pump is inactive per cycle.
-#define PUMP_ENABLE_TIME 330   // (5:30AM) what time the pump should start cycling. Should be at or soon before sunrise.
-#define PUMP_DISABLE_TIME 1230 // (8:30PM) what time the pump should stop cycling. Should be soon after sunset.
+
+// time thresholds
+#define TIME_SUNRISE 330   // (5:30AM) what time the pre-sunrise tasks ocurr. (pump enable)
+#define TIME_SUNSET 1230 // (8:30PM) what time the post-sunset tasks ocurr. (pump disable, arm reset)
 
 // PUMP state
 bool pump_active = 0;       // 1: pump is active, 0: pump is inactive
@@ -314,9 +317,15 @@ int arm_get_target_angle() {
   int angle = mins_diff / 4;
   // DebugLog.printf("[TargetAngle] time=%d, noon[%d]=%d, raw_angle=%d\n", curr_mins, day_of_year, solar_noon, angle);
 
+  // after sunset timeout, reset arm to morning position.
+  if( curr_mins > TIME_SUNSET || curr_mins < TIME_SUNRISE ) {
+    angle = ARM_ANGLE_MIN;
+    return angle;
+  }
+
   // Clamp the target angle
-  if( angle < -ARM_ANGLE_MAX ) {
-    angle = -ARM_ANGLE_MAX;
+  if( angle < ARM_ANGLE_MIN ) {
+    angle = ARM_ANGLE_MIN;
   }
   else if( angle > ARM_ANGLE_MAX ) {
     angle = ARM_ANGLE_MAX;
@@ -451,7 +460,7 @@ void mpu_calibration( float x, float y, float z ) {
 void pump_controller() {
   int time = get_time(); // time in minutes since midnight
 
-  if( pump_suspended_night && time >= PUMP_ENABLE_TIME ) { // if pump is suspended and its time to enable it, then unsuspend, activate, and schedule a deactivation.
+  if( pump_suspended_night && time >= TIME_SUNRISE ) { // if pump is suspended and its time to enable it, then unsuspend, activate, and schedule a deactivation.
     pump_suspended_night = 0;
     digitalWrite(PIN_PUMP, HIGH);
     pump_next_inactive = time + PUMP_DUTY_ACTIVE;
@@ -465,7 +474,7 @@ void pump_controller() {
     return;
   }
 
-  if( (time >= PUMP_DISABLE_TIME || time < PUMP_ENABLE_TIME) && !pump_suspended_night) { // if time is outside of enable times AND pump is not suspended, turn off and suspend the pump.
+  if( (time >= TIME_SUNSET || time < TIME_SUNRISE) && !pump_suspended_night) { // if time is outside of enable times AND pump is not suspended, turn off and suspend the pump.
     digitalWrite(PIN_PUMP, LOW);
     pump_active = 0;
     pump_suspended_night = 1;
