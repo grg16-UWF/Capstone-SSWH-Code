@@ -79,7 +79,7 @@ int mpu_errored = 0; // if the mpu is errored, prevent using its invalid data
 #define TIME_SUNSET 1170 // (8:30PM) what time the post-sunset tasks ocurr. (pump disable, arm reset)
 
 // PUMP state
-bool pump_active = 0;       // 1: pump is active, 0: pump is inactive
+bool pump_active = false;       // 1: pump is active, 0: pump is inactive
 int pump_next_active = 0;   // time when the pump should turn on
 int pump_next_inactive = 0; // time when the pump should turn off
 bool pump_suspended_night = 1; // whether the pump is currently kept off for nighttime
@@ -402,6 +402,7 @@ void armController() {
   int current_angle = mpu_get_current_angle();
 
   DebugLog.printf("Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
+  matter_arm_angle.setTemperature(current_angle);
   
   // don't attempt to move the arm if it's disabled.
   if( !ARM_ENABLED ) {
@@ -474,11 +475,11 @@ void mpu_calibration( float x, float y, float z ) {
 // Pump functions
 void pump_on() {
   digitalWrite(PIN_PUMP, LOW);
-  pump_active = 1;
+  pump_active = true;
 }
 void pump_off() {
   digitalWrite(PIN_PUMP, HIGH);
-  pump_active = 0;
+  pump_active = false;
 }
 
 void pump_controller() {
@@ -488,7 +489,7 @@ void pump_controller() {
     pump_suspended_night = 0;
     pump_on();
     pump_next_inactive = time + PUMP_DUTY_ACTIVE;
-    matter_pump_active.setContact(pump_active);
+    matter_pump_active.setContact(!pump_active);
     
     DebugLog.printf("[PUMP] Unsuspending and activating, will turn off at %d.\n", pump_next_inactive);
     return;
@@ -496,6 +497,7 @@ void pump_controller() {
 
   if( pump_suspended_night ) { // if the pump is suspended, leave it and do nothing.
     pump_off();
+    matter_pump_active.setContact(!pump_active);
     DebugLog.println("[PUMP] Suspended...");
     return;
   }
@@ -503,7 +505,7 @@ void pump_controller() {
   if( (time >= TIME_SUNSET || time < TIME_SUNRISE) && !pump_suspended_night) { // if time is outside of enable times AND pump is not suspended, turn off and suspend the pump.
     pump_off();
     pump_suspended_night = 1;
-    matter_pump_active.setContact(pump_active);
+    matter_pump_active.setContact(!pump_active);
     DebugLog.println("[PUMP] Suspending for the night.");
     return;
   }
@@ -519,7 +521,7 @@ void pump_controller() {
     pump_next_inactive = time + PUMP_DUTY_ACTIVE;
     DebugLog.printf("[PUMP] Turned on, will turn off at %d.\n", pump_next_inactive);
   }
-  matter_pump_active.setContact(pump_active);
+  matter_pump_active.setContact(!pump_active);
 }
 
 
@@ -528,7 +530,7 @@ void matter_update_temp_sensors() {
   matter_temp_input.setTemperature(temp_get_by_addr(TEMP_INPUT));
   matter_temp_collector.setTemperature(temp_get_by_addr(TEMP_COLLECTOR));
   matter_temp_tank.setTemperature(temp_get_by_addr(TEMP_TANK));
-  // matter_arm_angle.setTemperature(temp_get_by_addr(TEMP_AIR));
+  matter_pump_active.setContact(!pump_active);
 }
 
 
