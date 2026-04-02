@@ -22,7 +22,7 @@ bool wifi_connected_prev = false;
 #define PIN_TEMP_ONEWIRE 19 // GIOP 19
 
 // OUTPUT PINS (GIOP #)
-#define PIN_PUMP 18
+#define PIN_PUMP 3
 #define PIN_ARM_ENABLE 17
 #define PIN_ARM_EXTEND 4
 #define PIN_ARM_RETRACT 16
@@ -473,11 +473,11 @@ void mpu_calibration( float x, float y, float z ) {
 
 // Pump functions
 void pump_on() {
-  digitalWrite(PIN_PUMP, HIGH);
+  digitalWrite(PIN_PUMP, LOW);
   pump_active = 1;
 }
 void pump_off() {
-  digitalWrite(PIN_PUMP, LOW);
+  digitalWrite(PIN_PUMP, HIGH);
   pump_active = 0;
 }
 
@@ -504,7 +504,7 @@ void pump_controller() {
     pump_off();
     pump_suspended_night = 1;
     matter_pump_active.setContact(pump_active);
-    DebugLog.println("[PUMP] Suspended for the night.");
+    DebugLog.println("[PUMP] Suspending for the night.");
     return;
   }
 
