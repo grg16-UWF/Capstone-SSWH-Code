@@ -65,7 +65,7 @@ int mpu_errored = 0; // if the mpu is errored, prevent using its invalid data
 
 // Target Angle limits
 #define ARM_ENABLED true // allow disabling the arm for testing
-#define ARM_ANGLE_MAX 40 // maximum angle for solar tracking (facing west)
+#define ARM_ANGLE_MAX 38 // maximum angle for solar tracking (facing west)
 #define ARM_ANGLE_MIN -40 // minimum angle for solar tracking (facing east)
 #define ARM_ANGLE_THRESHOLD 5 // how far from the target the current angle can be before moving.
 #define ARM_MOVE_POLLING_PERIOD 100 // (ms) how often the arm should check angle while moving
@@ -76,7 +76,7 @@ int mpu_errored = 0; // if the mpu is errored, prevent using its invalid data
 
 // time thresholds
 #define TIME_SUNRISE 330   // (5:30AM) what time the pre-sunrise tasks ocurr. (pump enable)
-#define TIME_SUNSET 1230 // (8:30PM) what time the post-sunset tasks ocurr. (pump disable, arm reset)
+#define TIME_SUNSET 1170 // (8:30PM) what time the post-sunset tasks ocurr. (pump disable, arm reset)
 
 // PUMP state
 bool pump_active = 0;       // 1: pump is active, 0: pump is inactive
@@ -118,8 +118,7 @@ void setup() {
   }
 
   // Setup pump and arm pins
-  pinMode(PIN_PUMP, OUTPUT);
-  digitalWrite(PIN_PUMP, LOW);
+  pump_off();
 
   pinMode(PIN_ARM_ENABLE, OUTPUT);
   digitalWrite(PIN_ARM_ENABLE, LOW);
@@ -183,11 +182,11 @@ void loop() {
   DebugLog.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
   matter_update_temp_sensors();
 
-  // control the arm.
-  armController();
-
   // control the pump.
   pump_controller();
+
+  // control the arm.
+  armController();
   
   delay(5000);
 }
@@ -473,42 +472,51 @@ void mpu_calibration( float x, float y, float z ) {
 
 
 // Pump functions
+void pump_on() {
+  digitalWrite(PIN_PUMP, HIGH);
+  pump_active = 1;
+}
+void pump_off() {
+  digitalWrite(PIN_PUMP, LOW);
+  pump_active = 0;
+}
+
 void pump_controller() {
   int time = get_time(); // time in minutes since midnight
 
-  if( pump_suspended_night && time >= TIME_SUNRISE ) { // if pump is suspended and its time to enable it, then unsuspend, activate, and schedule a deactivation.
+  if( pump_suspended_night && time >= TIME_SUNRISE && time < TIME_SUNSET ) { // if pump is suspended and its time to enable it, then unsuspend, activate, and schedule a deactivation.
     pump_suspended_night = 0;
-    digitalWrite(PIN_PUMP, HIGH);
+    pump_on();
     pump_next_inactive = time + PUMP_DUTY_ACTIVE;
-    pump_active = 1;
     matter_pump_active.setContact(pump_active);
     
     DebugLog.printf("[PUMP] Unsuspending and activating, will turn off at %d.\n", pump_next_inactive);
+    return;
   }
 
   if( pump_suspended_night ) { // if the pump is suspended, leave it and do nothing.
+    pump_off();
+    DebugLog.println("[PUMP] Suspended...");
     return;
   }
 
   if( (time >= TIME_SUNSET || time < TIME_SUNRISE) && !pump_suspended_night) { // if time is outside of enable times AND pump is not suspended, turn off and suspend the pump.
-    digitalWrite(PIN_PUMP, LOW);
-    pump_active = 0;
+    pump_off();
     pump_suspended_night = 1;
     matter_pump_active.setContact(pump_active);
     DebugLog.println("[PUMP] Suspended for the night.");
+    return;
   }
 
   // Regular pump operation
   if( pump_active && time >= pump_next_inactive ) { // if pump on AND deactivate time reached, turn off pump and set time for activation.
-    digitalWrite(PIN_PUMP, LOW);
+    pump_off();
     pump_next_active = time + PUMP_DUTY_INACTIVE;
-    pump_active = 0;
     DebugLog.printf("[PUMP] Turned off, will turn on at %d.\n", pump_next_active);
   }
   else if( !pump_active && time >= pump_next_active ) { // if pump off AND activation time reached, turn on pump and set deactivate time
-    digitalWrite(PIN_PUMP, HIGH);
+    pump_on();
     pump_next_inactive = time + PUMP_DUTY_ACTIVE;
-    pump_active = 1;
     DebugLog.printf("[PUMP] Turned on, will turn off at %d.\n", pump_next_inactive);
   }
   matter_pump_active.setContact(pump_active);
