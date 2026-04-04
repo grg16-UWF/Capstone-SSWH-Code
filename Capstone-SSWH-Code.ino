@@ -69,14 +69,15 @@ int mpu_errored = 0; // if the mpu is errored, prevent using its invalid data
 #define ARM_ANGLE_MIN -40 // minimum angle for solar tracking (facing east)
 #define ARM_ANGLE_THRESHOLD 5 // how far from the target the current angle can be before moving.
 #define ARM_MOVE_POLLING_PERIOD 100 // (ms) how often the arm should check angle while moving
+#define ARM_MOVE_TIMEOUT 30000 // (ms) how long before an arm movement times out. For preventing an inaccurate unreachable MPU reading from softlocking arm movement and stopping program flow.
 
 // PUMP SETUP
 #define PUMP_DUTY_ACTIVE 1    // how many minutes the pump is active per cycle.
 #define PUMP_DUTY_INACTIVE 2  // how many minutes the pump is inactive per cycle.
 
 // time thresholds
-#define TIME_SUNRISE 330   // (5:30AM) what time the pre-sunrise tasks ocurr. (pump enable)
-#define TIME_SUNSET 1170 // (8:30PM) what time the post-sunset tasks ocurr. (pump disable, arm reset)
+#define TIME_SUNRISE 330   // (6:30AM DST) what time the pre-sunrise tasks ocurr. (pump enable)
+#define TIME_SUNSET 1170 // (8:30PM DST) what time the post-sunset tasks ocurr. (pump disable, arm reset)
 
 // PUMP state
 bool pump_active = false;       // 1: pump is active, 0: pump is inactive
@@ -355,6 +356,7 @@ void arm_move( const int target_angle ) {
   digitalWrite(PIN_ARM_ENABLE, HIGH);
   
   int diff; // declare diff for use in while condition
+  int timeoutCounter = ARM_MOVE_TIMEOUT / ARM_MOVE_POLLING_PERIOD; // how many polling periods to wait before timing out to attempt other functions.
   do {
     // find angles and diff
     int current_angle = mpu_get_current_angle();
@@ -379,8 +381,9 @@ void arm_move( const int target_angle ) {
     }
 
     delay(ARM_MOVE_POLLING_PERIOD); // wait for arm to move
+    timeoutCounter--;
 
-  } while( diff != 0 );
+  } while( diff != 0 && timeoutCounter > 0 );
 
   // turn off arm
   digitalWrite(PIN_ARM_ENABLE, LOW);
