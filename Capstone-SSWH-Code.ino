@@ -119,6 +119,7 @@ void setup() {
   }
 
   // Setup pump and arm pins
+  pinMode(PIN_PUMP, OUTPUT);
   pump_off();
 
   pinMode(PIN_ARM_ENABLE, OUTPUT);
@@ -357,11 +358,12 @@ void arm_move( const int target_angle ) {
   
   int diff; // declare diff for use in while condition
   int timeoutCounter = ARM_MOVE_TIMEOUT / ARM_MOVE_POLLING_PERIOD; // how many polling periods to wait before timing out to attempt other functions.
+  int current_angle = 0;
   do {
     // find angles and diff
-    int current_angle = mpu_get_current_angle();
+    current_angle = mpu_get_current_angle();
     diff = target_angle - current_angle;
-    DebugLog.printf("[Arm Move]: Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
+    DebugLog.printf("[Arm Move]: Current Angle: %d, Target Angle: %d, Timeout: %d\n", current_angle, target_angle, timeoutCounter);
     
     matter_arm_angle.setTemperature(current_angle);
 
@@ -390,7 +392,7 @@ void arm_move( const int target_angle ) {
   digitalWrite(PIN_ARM_RETRACT, LOW);
   digitalWrite(PIN_ARM_EXTEND, LOW);
 
-  DebugLog.printf("[Arm Move] Reached %d\n", target_angle);
+  DebugLog.printf("[Arm Move] Reached %d\n", current_angle);
 }
 
 void armController() {
