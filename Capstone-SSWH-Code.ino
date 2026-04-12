@@ -12,13 +12,12 @@
 #include "esp_pm.h"     // Power management and light sleep
 #include "esp_wifi.h"
 
+#include <PicoSyslog.h>
+
 #include "SolarNoon/solar_noon.h"
 
-#define DEBUG true // Enable debug output to serial port
-#define DebugLog if(DEBUG) Serial
-
 // Wifi Setup
-#include "env.h" // defines WIFI_SSID and WIFI_PASS 
+#include "env.h" // defines WIFI_SSID, WIFI_PASS, and SYSLOG_SERVER_IP
 bool wifi_connected_prev = false;
 
 // INPUT PINS
@@ -71,7 +70,7 @@ int mpu_errored = 0; // if the mpu is errored, prevent using its invalid data
 #define ARM_ANGLE_MAX 38 // maximum angle for solar tracking (facing west)
 #define ARM_ANGLE_MIN -40 // minimum angle for solar tracking (facing east)
 #define ARM_ANGLE_THRESHOLD 5 // how far from the target the current angle can be before moving.
-#define ARM_MOVE_POLLING_PERIOD 100 // (ms) how often the arm should check angle while moving
+#define ARM_MOVE_POLLING_PERIOD 200 // (ms) how often the arm should check angle while moving
 #define ARM_MOVE_TIMEOUT 30000 // (ms) how long before an arm movement times out. For preventing an inaccurate unreachable MPU reading from softlocking arm movement and stopping program flow.
 
 // PUMP SETUP
@@ -98,29 +97,40 @@ MatterTemperatureSensor matter_temp_tank; // temp sensor 3
 MatterTemperatureSensor matter_arm_angle; // temp sensor 4
 MatterContactSensor matter_pump_active; // Contact Sensor 1
 
+// Syslog for logging over wifi
+PicoSyslog::Logger syslog("Capstone_SSWH");
+/* syslog level usage:
+    debug: setup successful
+    information: normal operation
+    error: errors
+    alert: needs attention (matter pairing code)
+*/
+
 void setup() {
-  if( DEBUG ) {
-    Serial.begin(115200);
-    Serial.println("");
-    delay(500);
-    Serial.println("\n\n[STARTUP].............................................");
-    Serial.printf("[WIFI] Connecting to '%s' with password '%s'\n", WIFI_SSID, WIFI_PASS);
-  }
+  Serial.begin(115200);
+
+  Serial.println("");
+  delay(500);
+  Serial.println("\n\n[STARTUP].............................................");
+  Serial.printf("[WIFI] Connecting to '%s' with password '%s'\n", WIFI_SSID, WIFI_PASS);
 
   // Manual wifi, later let matter setup wifi and use it when available.
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.begin(WIFI_SSID, WIFI_PASS); // using WIFI_SSID and WIFI_PASS from env.h
   wifi_connected_prev = false;
+
+  // set IP for syslog server from env.h
+  syslog.server = SYSLOG_SERVER_IP; // syslog requires wifi, hopefully it'll
 
   // Setup MPU
   if( !mpu.begin() ) {
-    DebugLog.println("[MPU] ERROR! Failed to init MPU");
+    syslog.error.println("[MPU] ERROR! Failed to init MPU");
     mpu_errored = 1;
   }
   else {
     mpu.setAccelerometerRange(MPU_ACCEL_RANGE);
     mpu.setGyroRange(MPU_GYRO_RANGE);
     mpu.setFilterBandwidth(MPU_FILTER_BANDWIDTH);
-    DebugLog.println("[MPU] Setup complete");
+    syslog.debug.println("[MPU] Setup complete");
     mpu_errored = 0;
   }
 
@@ -149,12 +159,12 @@ void setup() {
 
   Matter.onEvent([](matterEvent_t event, const void *data) {
     if (event == MATTER_COMMISSIONING_COMPLETE) {
-      Serial.println("[MATTER] Successfully commissioned!");
+      syslog.debug.println("[MATTER] Successfully commissioned!");
     }
   });
 
   if (!Matter.isDeviceCommissioned()) {
-    Serial.printf("  Manual pairing code: %s\n", Matter.getManualPairingCode().c_str());
+    syslog.alert.printf("[MATTER] Manual pairing code: %s\n", Matter.getManualPairingCode().c_str());
   }
 
   esp_pm_config_t pm_config = {
@@ -164,21 +174,22 @@ void setup() {
   };
 
   if (esp_pm_configure(&pm_config) == ESP_OK) {
-    Serial.println("[POWER] power management configured.");
+    syslog.debug.println("[POWER] power management configured.");
   } else {
-    Serial.println("[POWER] ERROR! power management configuration error!");
+    syslog.error.println("[POWER] ERROR! power management configuration error!");
   }
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM); // allow sleeping between wifi keepalives.
 
-  DebugLog.println("setup() ended");
+  syslog.debug.println("setup() ended");
 }
 
 void loop() {
-  DebugLog.println();
+  syslog.information.println();
   time_println();
 
 
   bool wifi_connected = wifi_check_status();
+  // TODO: try to reconnect to wifi if disconnected.
 
   // If we have a WiFi connection AND the RTC has not already been updated, then try to update the RTC
   if( !RTC_SYNCED && wifi_connected ) {
@@ -197,10 +208,10 @@ void loop() {
   temp_read_sensors();
 
   // send sensor data over matter
-  DebugLog.printf("Temp Input:    %11.6f C\n", temp_get_by_addr(TEMP_INPUT) );
-  DebugLog.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
-  DebugLog.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
-  DebugLog.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
+  syslog.information.printf("Temp Input:    %11.6f C\n", temp_get_by_addr(TEMP_INPUT) );
+  syslog.information.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
+  syslog.information.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
+  syslog.information.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
   matter_update_temp_sensors();
 
   // control the pump.
@@ -224,10 +235,10 @@ bool wifi_check_status() {
 
   if( wifi_connected_prev != wifi_connected_current) { // If wifi connected status changes, then log it
     if( wifi_connected_current ) {
-      DebugLog.println("[WIFI] Connected");
+      syslog.information.println("[WIFI] Connected");
     }
     else {
-      DebugLog.println("[WIFI] Disconnected");
+      syslog.error.println("[WIFI] Disconnected");
     }
   }
   wifi_connected_prev = wifi_connected_current;
@@ -238,20 +249,18 @@ bool wifi_check_status() {
 
 // Time Functions
 void time_println() {
-  if( DEBUG ) { // do nothing if not in DEBUG mode.
-    struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
-      Serial.println("No time available (yet)");
-      return;
-    }
-    Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    syslog.warning.println("No time available (yet)");
+    return;
   }
+  syslog.information.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
 }
 
 struct tm getLocalTime_no_dst() { // I need non-DST time to avoid having to calculate DST cutoff dates
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
-    DebugLog.println("[getLocalTime_no_dst] Time not available (yet)");
+    syslog.warning.println("[getLocalTime_no_dst] Time not available (yet)");
     return timeinfo;
   }
   
@@ -276,13 +285,13 @@ int get_time() {
 
 
 void rtc_sync() {
-  DebugLog.println("[RTC] Starting RTC sync.");
+  syslog.debug.println("[RTC] Starting RTC sync.");
   sntp_set_time_sync_notification_cb(rtc_sync_callback); // set callback func to update RTC_SYNCED and print to debug.
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer1, ntpServer2);
 }
 
 void rtc_sync_callback(struct timeval *t) {
-  DebugLog.print("Got time adjustment from NTP, time is: ");
+  syslog.debug.print("Got time adjustment from NTP, time is: ");
   time_println();
   RTC_SYNCED = true;
 }
@@ -292,14 +301,14 @@ void rtc_sync_callback(struct timeval *t) {
 void temp_setup_onewire() {
   setup_attempts--;
   onewire_num_devices = onewire.search(onewire_active_addrs, ONEWIRE_MAX_DEVICES);
-  DebugLog.printf("[TEMP] onewire.search() found %d devices.\n", onewire_num_devices);
+  syslog.debug.printf("[TEMP] onewire.search() found %d devices.\n", onewire_num_devices);
 }
 
 void temp_print_onewire_addrs() {
-  if (DEBUG && onewire_num_devices > 0 ) { // do nothing if not in DEBUG mode or no devs connected
-    Serial.println("[OneWire] Addresses:");
+  if (onewire_num_devices > 0 ) { // do nothing if no devs connected
+    syslog.debug.println("[OneWire] Addresses:");
     for (uint8_t i = 0; i < onewire_num_devices; i += 1) {
-      Serial.printf("%d: 0x%llx,\n", i, onewire_active_addrs[i]);
+      syslog.debug.printf("%d: 0x%llx,\n", i, onewire_active_addrs[i]);
     }
   }
 }
@@ -315,11 +324,11 @@ void temp_read_sensors() {
   for( uint8_t i = 0; i < onewire_num_devices; i++ ) {
     uint8_t error = onewire.getTemp(onewire_active_addrs[i], temp_measured[i]);
     if( error ) {
-      DebugLog.printf("[OneWire] ERROR: 0x%llx errored: %s\n", onewire_active_addrs[i], ONEWIRE_ERROR_TYPES[error]);
+      syslog.error.printf("[OneWire] ERROR: 0x%llx errored: %s\n", onewire_active_addrs[i], ONEWIRE_ERROR_TYPES[error]);
       temp_measured[i] = -100.0;
     }
     else {
-      // DebugLog.printf("[OneWire] DATA: 0x%llx : %f\n", onewire_active_addrs[i], temp_measured[i]);
+      // syslog.information.printf("[OneWire] DATA: 0x%llx : %f\n", onewire_active_addrs[i], temp_measured[i]);
     }
   }
 }
@@ -345,7 +354,7 @@ int arm_get_target_angle() {
   
   // Calculate the target angle from the time difference.
   int angle = mins_diff / 4;
-  // DebugLog.printf("[TargetAngle] time=%d, noon[%d]=%d, raw_angle=%d\n", curr_mins, day_of_year, solar_noon, angle);
+  // syslog.information.printf("[TargetAngle] time=%d, noon[%d]=%d, raw_angle=%d\n", curr_mins, day_of_year, solar_noon, angle);
 
   // after sunset timeout, reset arm to morning position.
   if( curr_mins > TIME_SUNSET || curr_mins < TIME_SUNRISE ) {
@@ -387,18 +396,18 @@ void arm_move( const int target_angle ) {
     // find angles and diff
     current_angle = mpu_get_current_angle();
     diff = target_angle - current_angle;
-    DebugLog.printf("[Arm Move]: Current Angle: %d, Target Angle: %d, Timeout: %d\n", current_angle, target_angle, timeoutCounter);
+    syslog.information.printf("[Arm Move]: Current Angle: %d, Target Angle: %d, Timeout: %d\n", current_angle, target_angle, timeoutCounter);
     
     matter_arm_angle.setTemperature(current_angle);
 
     
     if( diff > 0 ) { // extend
-      DebugLog.println("[Arm Move] Extending");
+      syslog.information.println("[Arm Move] Extending");
       digitalWrite(PIN_ARM_RETRACT, LOW);
       digitalWrite(PIN_ARM_EXTEND, HIGH);
     }
     else if(diff < 0) { // retract
-      DebugLog.println("[Arm Move] Retracting");
+      syslog.information.println("[Arm Move] Retracting");
       digitalWrite(PIN_ARM_EXTEND, LOW);
       digitalWrite(PIN_ARM_RETRACT, HIGH);
     }
@@ -416,7 +425,7 @@ void arm_move( const int target_angle ) {
   digitalWrite(PIN_ARM_RETRACT, LOW);
   digitalWrite(PIN_ARM_EXTEND, LOW);
 
-  DebugLog.printf("[Arm Move] Reached %d\n", current_angle);
+  syslog.information.printf("[Arm Move] Reached %d\n", current_angle);
 }
 
 void armController() {
@@ -424,28 +433,28 @@ void armController() {
   int target_angle = arm_get_target_angle();
   
   if( mpu_errored ) { // if (mpu_errored != 0 )
-    DebugLog.printf("[ARM]: MPU in errored state, not moving arm. Target Angle: %d\n", target_angle);
+    syslog.error.printf("[ARM] MPU in errored state, not moving arm. Target Angle: %d\n", target_angle);
   }
 
   // get current arm angle from MPU
   int current_angle = mpu_get_current_angle();
 
-  DebugLog.printf("Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
+  syslog.information.printf("[ARM] Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
   matter_arm_angle.setTemperature(current_angle);
   
   // don't attempt to move the arm if it's disabled.
   if( !ARM_ENABLED ) {
-    DebugLog.println("[ARM] Arm is disabled.");
+    syslog.information.println("[ARM] Arm is disabled.");
     return;
   }
 
   // set acutator to correct position based on desired angle and current angle
   if( arm_check_move_needed(current_angle, target_angle) ) {
-    DebugLog.println("Threshold crossed, moving to new angle...");
+    syslog.information.println("[ARM] Threshold crossed, moving to new angle...");
     arm_move(target_angle);
   }
   else {
-    DebugLog.println("No move needed.");
+    syslog.information.println("[ARM] No move needed.");
   }
   matter_arm_angle.setTemperature(current_angle);
 }
@@ -468,14 +477,14 @@ int mpu_get_current_angle() {
   float ay = a.acceleration.y - ACCEL_OFFSET[1];
   float az = a.acceleration.z - ACCEL_OFFSET[2];
 
-  // DebugLog.printf("[MPU] Values: {%f, %f, %f}\n", ax, ay, az);
+  // syslog.information.printf("[MPU] Values: {%f, %f, %f}\n", ax, ay, az);
 
 
   // convert to roll and pitch
   // float roll = atan2(ay, az) * 180.0/PI;
   float pitch = atan2(-ax, sqrt(ay*ay + az*az)) * 180.0/PI;
 
-  // DebugLog.printf("[MPU] Roll: %7.3f, Pitch: %7.3f\n", roll, pitch);
+  // syslog.information.printf("[MPU] Roll: %7.3f, Pitch: %7.3f\n", roll, pitch);
 
   return (int)pitch;
 }
@@ -483,7 +492,7 @@ int mpu_get_current_angle() {
 void mpu_calibration( float x, float y, float z ) {
   mpu_num_samples++;
   z -= 9.81;
-  DebugLog.printf("[MPU] Raw: {%f, %f, %f}\n", x, y, z);
+  syslog.information.printf("[MPU] Raw: {%f, %f, %f}\n", x, y, z);
 
   // calculate moving average
   if(mpu_num_samples == 1 ) {
@@ -497,7 +506,7 @@ void mpu_calibration( float x, float y, float z ) {
     accel_raw_iteravg[2] = ( accel_raw_iteravg[2]*(mpu_num_samples-1) + z ) / mpu_num_samples; // Z
   }
   
-  DebugLog.printf("[MPU] Raw iterative average (%d samples): {%f, %f, %f}\n", mpu_num_samples, accel_raw_iteravg[0], accel_raw_iteravg[1], accel_raw_iteravg[2]);
+  syslog.information.printf("[MPU] Raw iterative average (%d samples): {%f, %f, %f}\n", mpu_num_samples, accel_raw_iteravg[0], accel_raw_iteravg[1], accel_raw_iteravg[2]);
 }
 
 
@@ -520,14 +529,14 @@ void pump_controller() {
     pump_next_inactive = time + PUMP_DUTY_ACTIVE;
     matter_pump_active.setContact(!pump_active);
     
-    DebugLog.printf("[PUMP] Unsuspending and activating, will turn off at %d.\n", pump_next_inactive);
+    syslog.information.printf("[PUMP] Unsuspending and activating, will turn off at %d.\n", pump_next_inactive);
     return;
   }
 
   if( pump_suspended_night ) { // if the pump is suspended, leave it and do nothing.
     pump_off();
     matter_pump_active.setContact(!pump_active);
-    DebugLog.println("[PUMP] Suspended...");
+    syslog.information.println("[PUMP] Suspended...");
     return;
   }
 
@@ -535,7 +544,7 @@ void pump_controller() {
     pump_off();
     pump_suspended_night = 1;
     matter_pump_active.setContact(!pump_active);
-    DebugLog.println("[PUMP] Suspending for the night.");
+    syslog.information.println("[PUMP] Suspending for the night.");
     return;
   }
 
@@ -543,12 +552,12 @@ void pump_controller() {
   if( pump_active && time >= pump_next_inactive ) { // if pump on AND deactivate time reached, turn off pump and set time for activation.
     pump_off();
     pump_next_active = time + PUMP_DUTY_INACTIVE;
-    DebugLog.printf("[PUMP] Turned off, will turn on at %d.\n", pump_next_active);
+    syslog.information.printf("[PUMP] Turned off, will turn on at %d.\n", pump_next_active);
   }
   else if( !pump_active && time >= pump_next_active ) { // if pump off AND activation time reached, turn on pump and set deactivate time
     pump_on();
     pump_next_inactive = time + PUMP_DUTY_ACTIVE;
-    DebugLog.printf("[PUMP] Turned on, will turn off at %d.\n", pump_next_inactive);
+    syslog.information.printf("[PUMP] Turned on, will turn off at %d.\n", pump_next_inactive);
   }
   matter_pump_active.setContact(!pump_active);
 }
