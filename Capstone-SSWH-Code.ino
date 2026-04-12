@@ -22,7 +22,7 @@ bool wifi_connected_prev = false;
 #define PIN_TEMP_ONEWIRE 19 // GIOP 19
 
 // OUTPUT PINS (GIOP #)
-#define PIN_PUMP 3
+#define PIN_PUMP 0
 #define PIN_ARM_ENABLE 17
 #define PIN_ARM_EXTEND 4
 #define PIN_ARM_RETRACT 16
@@ -479,11 +479,11 @@ void mpu_calibration( float x, float y, float z ) {
 
 // Pump functions
 void pump_on() {
-  digitalWrite(PIN_PUMP, LOW);
+  digitalWrite(PIN_PUMP, HIGH);
   pump_active = true;
 }
 void pump_off() {
-  digitalWrite(PIN_PUMP, HIGH);
+  digitalWrite(PIN_PUMP, LOW);
   pump_active = false;
 }
 
