@@ -69,7 +69,15 @@ Select Board **ESP32 Dev Module**
 ## Rotational Axes
 ![Rotational Axes](rotational_axes.jpg)
 
-## Logging levels
+## Logging
+Serial logging over USB: UART0, Baudrate = `115200`.
+ - Should also be connected to TX0/RX0 pins.
+
+Network logging using Syslog over UDP.
+ - Enable UDP on a syslog server, set `SYSLOG_SERVER_IP` in env.h
+ - Allows constant logging without needing a serial connection at all times.
+
+### Logging Levels
  - debug: setup successful
  - information: normal operation
  - error: any error
