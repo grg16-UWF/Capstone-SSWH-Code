@@ -9,6 +9,9 @@
 
 #include <Matter.h>
 
+#include "esp_pm.h"     // Power management and light sleep
+#include "esp_wifi.h"
+
 #include "SolarNoon/solar_noon.h"
 
 #define DEBUG true // Enable debug output to serial port
@@ -75,9 +78,12 @@ int mpu_errored = 0; // if the mpu is errored, prevent using its invalid data
 #define PUMP_DUTY_ACTIVE 1    // how many minutes the pump is active per cycle.
 #define PUMP_DUTY_INACTIVE 2  // how many minutes the pump is inactive per cycle.
 
-// time thresholds
+// time constants
 #define TIME_SUNRISE 330   // (6:30AM DST) what time the pre-sunrise tasks ocurr. (pump enable)
 #define TIME_SUNSET 1170 // (8:30PM DST) what time the post-sunset tasks ocurr. (pump disable, arm reset)
+
+#define LOOP_DELAY_DAY 5*1000 // time (ms) to delay at the end of the main loop during the day
+#define LOOP_DELAY_NIGHT 30*1000   // time (ms) to delay at the end of the main loop overnight (for lower power consumption)
 
 // PUMP state
 bool pump_active = false;       // 1: pump is active, 0: pump is inactive
@@ -148,8 +154,21 @@ void setup() {
   });
 
   if (!Matter.isDeviceCommissioned()) {
-    Serial.printf("Manual pairing code: %s\n", Matter.getManualPairingCode().c_str());
+    Serial.printf("  Manual pairing code: %s\n", Matter.getManualPairingCode().c_str());
   }
+
+  esp_pm_config_t pm_config = {
+    .max_freq_mhz = 240,  // regular clock freq
+    .min_freq_mhz = 80,   // downclock freq for power saving (80MHz lowest for keeping WiFi alive).
+    .light_sleep_enable = true  // allows scheduler to activate light sleep. delay() on esp32 uses scheduler.
+  };
+
+  if (esp_pm_configure(&pm_config) == ESP_OK) {
+    Serial.println("[POWER] power management configured.");
+  } else {
+    Serial.println("[POWER] ERROR! power management configuration error!");
+  }
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM); // allow sleeping between wifi keepalives.
 
   DebugLog.println("setup() ended");
 }
@@ -190,7 +209,12 @@ void loop() {
   // control the arm.
   armController();
   
-  delay(5000);
+  // end of cycle delay
+  if(pump_suspended_night) { // assume pump_suspended_night is correct
+    delay(LOOP_DELAY_NIGHT);
+  } else {
+    delay(LOOP_DELAY_DAY);
+  }
 }
 
 
