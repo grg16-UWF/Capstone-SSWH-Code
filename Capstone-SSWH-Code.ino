@@ -231,6 +231,9 @@ void loop() {
   // control the arm.
   armController();
   
+  // heap status
+  Serial.printf("[HEAP] Free: %d  MinFree: %d  LargestBlock: %d\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+
   // end of cycle delay
   if(pump_suspended_night) { // assume pump_suspended_night is correct
     Serial.println("[LOOP] night delay.");
