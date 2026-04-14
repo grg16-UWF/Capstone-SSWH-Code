@@ -98,7 +98,7 @@ MatterTemperatureSensor matter_arm_angle; // temp sensor 4
 MatterContactSensor matter_pump_active; // Contact Sensor 1
 
 // Syslog for logging over wifi
-PicoSyslog::Logger syslog("Capstone_SSWH");
+PicoSyslog::Logger syslog("Capstone-SSWH");
 /* syslog level usage:
     debug: setup successful
     information: normal operation
@@ -167,25 +167,27 @@ void setup() {
     syslog.alert.printf("[MATTER] Manual pairing code: %s\n", Matter.getManualPairingCode().c_str());
   }
 
-  esp_pm_config_t pm_config = {
-    .max_freq_mhz = 240,  // regular clock freq
-    .min_freq_mhz = 80,   // downclock freq for power saving (80MHz lowest for keeping WiFi alive).
-    .light_sleep_enable = true  // allows scheduler to activate light sleep. delay() on esp32 uses scheduler.
-  };
+  // esp_pm_config_t pm_config;
+  // // pm_config.max_freq_mhz = 240;  // regular clock freq
+  // // pm_config.min_freq_mhz = 80;   // downclock freq for power saving (80MHz lowest for keeping WiFi alive).
+  // pm_config.light_sleep_enable = false;  // allows scheduler to activate light sleep. delay() on esp32 uses scheduler.
 
-  if (esp_pm_configure(&pm_config) == ESP_OK) {
-    syslog.debug.println("[POWER] power management configured.");
-  } else {
-    syslog.error.println("[POWER] ERROR! power management configuration error!");
-  }
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM); // allow sleeping between wifi keepalives.
+  // esp_err_t esp_pm_err = esp_pm_configure(&pm_config);
+  // if ( esp_pm_err == ESP_OK) {
+  //   syslog.debug.println("[POWER] power management configured.");
+  // } else {
+  //   syslog.error.printf("[POWER] ERROR: %s\n", esp_err_to_name(esp_pm_err));
+  // }
+  // esp_wifi_set_ps(WIFI_PS_MIN_MODEM); // allow sleeping between wifi keepalives.
+  
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
   syslog.debug.println("setup() ended");
 }
 
 void loop() {
-  syslog.information.println();
-  time_println();
+  syslog.information.printf("\n%s\n", time_string());
+  // time_println();
 
 
   bool wifi_connected = wifi_check_status();
@@ -222,9 +224,9 @@ void loop() {
   
   // end of cycle delay
   if(pump_suspended_night) { // assume pump_suspended_night is correct
-    delay(LOOP_DELAY_NIGHT);
+    delay((uint32_t) LOOP_DELAY_NIGHT);
   } else {
-    delay(LOOP_DELAY_DAY);
+    delay((uint32_t) LOOP_DELAY_DAY);
   }
 }
 
@@ -251,10 +253,21 @@ bool wifi_check_status() {
 void time_println() {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
-    syslog.warning.println("No time available (yet)");
+    syslog.information.println("No time available (yet)");
     return;
   }
   syslog.information.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+}
+
+String time_string() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    return "No time available (yet)";
+  }
+  char timestr[60] = {0};
+  strftime(timestr, 60, "%A, %B %d %Y %H:%M:%S", &timeinfo);
+  String str(timestr);
+  return str;
 }
 
 struct tm getLocalTime_no_dst() { // I need non-DST time to avoid having to calculate DST cutoff dates
@@ -291,8 +304,8 @@ void rtc_sync() {
 }
 
 void rtc_sync_callback(struct timeval *t) {
-  syslog.debug.print("Got time adjustment from NTP, time is: ");
-  time_println();
+  syslog.debug.printf("Got time adjustment from NTP, time is: %s\n", time_string());
+  // time_println();
   RTC_SYNCED = true;
 }
 

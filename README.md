@@ -96,6 +96,6 @@ Network logging using Syslog over UDP.
  - - [x] need local time somehow (WiFi? Builtin?)
  - - [x] use inclinometer / gyroscope for actual angle
  - [x] syslog for logging over wifi instead of only when serial is connected
- - - [ ] remove DEBUG mode, always make logs
+ - - [x] remove DEBUG mode, always make logs
  - [ ] Require wifi to run the system. Time is needed for tilt control, and network for matter.
  - - [ ] use onboard blue LED to indicate waiting for wifi.
