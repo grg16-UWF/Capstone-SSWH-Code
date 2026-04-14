@@ -10,13 +10,16 @@ Program for smart system
 ![Pinout](ESP32_pinout.png)
 
 #### Used Pins
-- 36 (GIOP 22) [OUT]: Gyro SCL
-- 33 (GIOP 21) [OUT]: Gyro SDA
-- 31  (GIOP 19) [IN]: Temp Sensor OneWire Data
-- 30 (GIOP 18) [OUT]: Pump Relay
-- 28 (GIOP 17) [OUT]: Arm Enable
-- 27 (GIOP 16) [OUT]: Arm Retract
-- 26 (GIOP 04) [OUT]: Arm Extend
+| GIOP # | MODE | Connection   |
+|--------|------|--------------|
+| 22     | OUT  | Gyro SCL     |
+| 21     | OUT  | Gyro SDA     |
+| 19     | IN   | Temp OneWire |
+| 0      | OUT  | Pump Relay   |
+| 17     | OUT  | Arm Enable   |
+| 16     | OUT  | Arm Retract  |
+| 4      | OUT  | Arm Extend   |
+| 2      | OUT  | Debug LED    |
 
 ### Temp Sensor
 - Red: VCC
@@ -95,7 +98,7 @@ Network logging using Syslog over UDP.
  - [x] Tracking Acutator 15 deg/hr based on solar noon array
  - - [x] need local time somehow (WiFi? Builtin?)
  - - [x] use inclinometer / gyroscope for actual angle
- - [x] syslog for logging over wifi instead of only when serial is connected
+ - [ ] syslog for logging over wifi instead of only when serial is connected
  - - [x] remove DEBUG mode, always make logs
- - [ ] Require wifi to run the system. Time is needed for tilt control, and network for matter.
- - - [ ] use onboard blue LED to indicate waiting for wifi.
+ - [x] Require wifi to run the system. Time is needed for tilt control, and network for matter.
+ - - [x] use onboard blue LED to indicate waiting for wifi.
