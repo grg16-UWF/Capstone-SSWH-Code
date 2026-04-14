@@ -15,11 +15,11 @@ Program for smart system
 | 22     | OUT  | Gyro SCL     |
 | 21     | OUT  | Gyro SDA     |
 | 19     | IN   | Temp OneWire |
-| 0      | OUT  | Pump Relay   |
 | 17     | OUT  | Arm Enable   |
 | 16     | OUT  | Arm Retract  |
 | 4      | OUT  | Arm Extend   |
-| 2      | OUT  | Debug LED    |
+| 0      | OUT  | Pump Relay   |
+| 2      | OUT  | Onboard LED  |
 
 ### Temp Sensor
 - Red: VCC
