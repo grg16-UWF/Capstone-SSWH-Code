@@ -60,11 +60,13 @@ Adafruit_MPU6050 mpu;
 #define MPU_ACCEL_RANGE MPU6050_RANGE_4_G // Options: 2_G, 4_G, 8_G, 16_G
 #define MPU_GYRO_RANGE MPU6050_RANGE_500_DEG // Options (deg/sec): 250_DEG, 500_DEG, 1000_DEG, 2000_DEG   NOT USED IN THIS PROJECT
 #define MPU_FILTER_BANDWIDTH MPU6050_BAND_5_HZ
+#define MPU_MEDIAN_SAMPLE_SIZE 5 // how many samples will be collected to find the median for mpu accel readings.
 
 const float ACCEL_OFFSET[] = {0.141147, 0.147745, 0.643307}; // { X, Y, Z }
 float accel_raw_iteravg[] = {0, 0, 0}; // store an iterative average of accel measurements
 uint16_t mpu_num_samples = 0;
 int mpu_errored = 0; // if the mpu is errored, prevent using its invalid data
+int mpu_last_good_angle = 0; // only used when mpu sees invalid data. Not used for regular operation to avoid mutex issues and bigger refactor.
 
 // Target Angle limits
 #define ARM_ENABLED true // allow disabling the arm for testing
@@ -512,30 +514,86 @@ void armController() {
 // Gyroscope functions
 int mpu_get_current_angle() {
   if( mpu_errored ) { // if (mpu_errored != 0 )
-    return 0;
+    return mpu_last_good_angle;
   }
 
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
+  sensors_event_t a;
+  float gravity = 0.0;
+  float ax, ay, az;
 
-  // log uncalibrated values
-  // mpu_calibration(a.acceleration.x, a.acceleration.y, a.acceleration.z);
+  // median filtering should help, but also check that gravity is near expected value.
+  int retries = 5;
+  while ( (gravity < 8.0 || gravity > 12.0)) {
+    retries--;
+    mpu_get_accel_median(&a);
 
-  // apply calibration offsets
-  float ax = a.acceleration.x - ACCEL_OFFSET[0];
-  float ay = a.acceleration.y - ACCEL_OFFSET[1];
-  float az = a.acceleration.z - ACCEL_OFFSET[2];
+    // log uncalibrated values
+    // mpu_calibration(a.acceleration.x, a.acceleration.y, a.acceleration.z);
 
-  // Serial.printf("[MPU] Values: {%f, %f, %f}\n", ax, ay, az);
+    // apply calibration offsets
+    ax = a.acceleration.x - ACCEL_OFFSET[0];
+    ay = a.acceleration.y - ACCEL_OFFSET[1];
+    az = a.acceleration.z - ACCEL_OFFSET[2];
+
+    Serial.printf("[MPU] Values: {%f, %f, %f}\n", ax, ay, az);
+
+    gravity = sqrtf(ax*ax + ay*ay + az*az);
+    Serial.printf("[MPU] Gravity: %f\n", gravity);
+
+    if( retries <= 1 ) {
+      Serial.println("Too many bad gravity readings.");
+      return mpu_last_good_angle;
+    }
+  }
 
 
   // convert to roll and pitch
   // float roll = atan2(ay, az) * 180.0/PI;
-  float pitch = atan2(-ax, sqrt(ay*ay + az*az)) * 180.0/PI;
+  mpu_last_good_angle = atan2(-ax, sqrt(ay*ay + az*az)) * 180.0/PI;
 
   // Serial.printf("[MPU] Roll: %7.3f, Pitch: %7.3f\n", roll, pitch);
 
-  return (int)pitch;
+  return mpu_last_good_angle;
+}
+
+float array_median_destructive(const int size, float* array) {
+  // sort the first half of the array (size/2).
+  int middle = (size-1)/2;
+  for( int i = 0; i <= middle; i++ ) { // index the first half of the array:  size=5: i=0,1,2;   size=4: i=0,1
+    int min_idx = i;
+    for( int j = i+1; j < size; j++ ) { // find index of smallest value and store in min_idx
+      if( array[j] < array[min_idx] ) {
+        min_idx = j;
+      }
+    }
+    // swap if needed
+    if( min_idx != i ) {
+      float temp = array[i];
+      array[i] = array[min_idx];
+      array[min_idx] = temp;
+    }
+  }
+    return array[middle];
+}
+
+// store accel data in `a` as median of `n` samples. Has explicit delay of `n*5` ms
+void mpu_get_accel_median( sensors_event_t* result) {
+  // prepare sensor event holders and accel sample arrays.
+  sensors_event_t a, g, temp;
+  static float x[MPU_MEDIAN_SAMPLE_SIZE], y[MPU_MEDIAN_SAMPLE_SIZE], z[MPU_MEDIAN_SAMPLE_SIZE]; // using static arrays to avoid heap fragmentation
+
+  // get n samples.
+  for( int i = 0; i < MPU_MEDIAN_SAMPLE_SIZE; i++ ) {
+    mpu.getEvent(&a, &g, &temp);
+    x[i] = a.acceleration.x;
+    y[i] = a.acceleration.y;
+    z[i] = a.acceleration.z;
+    delay(5);
+  }
+  // calcuate median and store in result.
+  result->acceleration.x = array_median_destructive(MPU_MEDIAN_SAMPLE_SIZE, x);
+  result->acceleration.y = array_median_destructive(MPU_MEDIAN_SAMPLE_SIZE, y);
+  result->acceleration.z = array_median_destructive(MPU_MEDIAN_SAMPLE_SIZE, z);
 }
 
 void mpu_calibration( float x, float y, float z ) {
