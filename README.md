@@ -51,7 +51,6 @@ Boards Manager
 Library Manager
  - **esp32-ds18b20** by junkfix `2.0.3`
  - **Adafruit MPU6050** by Adafruit `2.2.9` and dependencies
- - **PicoSyslog** by Michal `1.1.0`
 
 Select Board **ESP32 Dev Module**
 
@@ -76,16 +75,16 @@ Select Board **ESP32 Dev Module**
 Serial logging over USB: UART0, Baudrate = `115200`.
  - Should also be connected to TX0/RX0 pins.
 
-Network logging using Syslog over UDP.
+<!-- Networked logging using Syslog over UDP. **[REMOVED]**
  - Enable UDP on a syslog server, set `SYSLOG_SERVER_IP` in env.h
  - Allows constant logging without needing a serial connection at all times.
 
-### Logging Levels
+### Syslog Logging Levels **[REMOVED WITH SYSLOG]**
  - debug: setup successful
  - information: normal operation
  - error: any error
  - warning: a low-level error that is expected to happen sometimes but not regularly (ex. time not available yet).
- - alert: needs attention (ex. Matter pairing code)
+ - alert: needs attention (ex. Matter pairing code) -->
 
 ## TODO
  - [x] Read sensors
@@ -98,7 +97,7 @@ Network logging using Syslog over UDP.
  - [x] Tracking Acutator 15 deg/hr based on solar noon array
  - - [x] need local time somehow (WiFi? Builtin?)
  - - [x] use inclinometer / gyroscope for actual angle
- - [ ] syslog for logging over wifi instead of only when serial is connected
+ - [ ] syslog for logging over wifi instead of only when serial is connected **[REMOVED]**
  - - [x] remove DEBUG mode, always make logs
  - [x] Require wifi to run the system. Time is needed for tilt control, and network for matter.
  - - [x] use onboard blue LED to indicate waiting for wifi.

@@ -12,12 +12,10 @@
 #include "esp_pm.h"     // Power management and light sleep
 #include "esp_wifi.h"
 
-#include <PicoSyslog.h>
-
 #include "SolarNoon/solar_noon.h"
 
 // Wifi Setup
-#include "env.h" // defines WIFI_SSID, WIFI_PASS, and SYSLOG_SERVER_IP
+#include "env.h" // defines WIFI_SSID, WIFI_PASS, and SYSLOG_SERVER_IP (unused)
 bool wifi_connected_prev = false;
 
 // INPUT PINS
@@ -100,14 +98,6 @@ MatterTemperatureSensor matter_temp_tank; // temp sensor 3
 MatterTemperatureSensor matter_arm_angle; // temp sensor 4
 MatterContactSensor matter_pump_active; // Contact Sensor 1
 
-// Syslog for logging over wifi
-PicoSyslog::Logger syslog("Capstone-SSWH");
-/* syslog level usage:
-    debug: setup successful
-    information: normal operation
-    error: errors
-    alert: needs attention (matter pairing code)
-*/
 
 void setup() {
   Serial.begin(115200);
@@ -120,9 +110,6 @@ void setup() {
   // Manual wifi, later let matter setup wifi and use it when available.
   WiFi.begin(WIFI_SSID, WIFI_PASS); // using WIFI_SSID and WIFI_PASS from env.h
   wifi_connected_prev = false;
-
-  // set IP for syslog server from env.h
-  syslog.server = SYSLOG_SERVER_IP; // syslog requires wifi, hopefully it'll
 
   // Setup MPU
   if( !mpu.begin() ) {
@@ -190,7 +177,7 @@ void setup() {
     bool led_on = true;
     digitalWrite(PIN_LED, led_on);
     led_on = !led_on;
-    Serial.print("[SETUP] Waiting for WiFi");   // if wifi not yet connected, don't need syslog and don't need newline buffering.
+    Serial.print("[SETUP] Waiting for WiFi");
     while( WiFi.status() != WL_CONNECTED ) {
       Serial.print(".");
       digitalWrite(PIN_LED, led_on);
