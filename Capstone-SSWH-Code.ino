@@ -78,16 +78,16 @@ int mpu_errored = 0; // if the mpu is errored, prevent using its invalid data
 #define PUMP_DUTY_INACTIVE 2  // how many minutes the pump is inactive per cycle.
 
 // time constants
-#define TIME_SUNRISE 330   // (6:30AM DST) what time the pre-sunrise tasks ocurr. (pump enable)
-#define TIME_SUNSET 1170 // (8:30PM DST) what time the post-sunset tasks ocurr. (pump disable, arm reset)
+#define TIME_SUNRISE 330  // (6:30AM DST) what time the pre-sunrise tasks ocurr. (pump enable)
+#define TIME_SUNSET 1170  // (8:30PM DST) what time the post-sunset tasks ocurr. (pump disable, arm reset)
 
-#define LOOP_DELAY_DAY 5*1000 // time (ms) to delay at the end of the main loop during the day
-#define LOOP_DELAY_NIGHT 30*1000   // time (ms) to delay at the end of the main loop overnight (for lower power consumption)
+#define LOOP_DELAY_DAY 5000     // time (ms) to delay at the end of the main loop during the day
+#define LOOP_DELAY_NIGHT 30000  // time (ms) to delay at the end of the main loop overnight (for lower power consumption)
 
 // PUMP state
-bool pump_active = false;       // 1: pump is active, 0: pump is inactive
-int pump_next_active = 0;   // time when the pump should turn on
-int pump_next_inactive = 0; // time when the pump should turn off
+bool pump_active = false;      // 1: pump is active, 0: pump is inactive
+int pump_next_active = 0;      // time when the pump should turn on
+int pump_next_inactive = 0;    // time when the pump should turn off
 bool pump_suspended_night = 1; // whether the pump is currently kept off for nighttime
 
 // Matter endpoint setup
@@ -179,8 +179,6 @@ void setup() {
   //   syslog.error.printf("[POWER] ERROR: %s\n", esp_err_to_name(esp_pm_err));
   // }
   // esp_wifi_set_ps(WIFI_PS_MIN_MODEM); // allow sleeping between wifi keepalives.
-  
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
   syslog.debug.println("setup() ended");
 }
@@ -198,7 +196,6 @@ void loop() {
     rtc_sync();
   }
   
-
 
   if( onewire_num_devices <= 0 && setup_attempts > 0 ) { // Find onewire devices if none are detected.
     temp_setup_onewire(); // only run this once to avoid rearranging address indices
@@ -262,12 +259,11 @@ void time_println() {
 String time_string() {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
-    return "No time available (yet)";
+    return String("No time available (yet)");
   }
   char timestr[60] = {0};
   strftime(timestr, 60, "%A, %B %d %Y %H:%M:%S", &timeinfo);
-  String str(timestr);
-  return str;
+  return String(timestr);
 }
 
 struct tm getLocalTime_no_dst() { // I need non-DST time to avoid having to calculate DST cutoff dates
