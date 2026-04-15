@@ -223,10 +223,10 @@ void loop() {
 	// read temp sensors
   temp_read_sensors();
 
-  // send sensor data over matter
-  Serial.printf("Temp Input:    %11.6f C\n", temp_get_by_addr(TEMP_INPUT) );
-  Serial.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
-  Serial.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
+  // log sensor data
+  // Serial.printf("Temp Input:    %11.6f C\n", temp_get_by_addr(TEMP_INPUT) );
+  // Serial.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
+  // Serial.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
   // Serial.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
 
   // control the pump.
@@ -242,14 +242,15 @@ void loop() {
   }
   
   // heap status
-  Serial.printf("[HEAP] Free: %lu  MinFree: %lu  LargestBlock: %lu\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+  uint32_t uptime = millis()/1000; // uptime in seconds;
+  Serial.printf("[HEAP] Free: %lu  MinFree: %lu  LargestBlock: %lu  Uptime (m:ss): %lu:%02d\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uptime/60, uptime%60);
 
   // end of cycle delay
   if(pump_suspended_night) { // assume pump_suspended_night is correct
-    Serial.println("[LOOP] night delay.");
+    // Serial.println("[LOOP] night delay.");
     delay((uint32_t) LOOP_DELAY_NIGHT);
   } else {
-    Serial.println("[LOOP] day delay.");
+    // Serial.println("[LOOP] day delay.");
     delay((uint32_t) LOOP_DELAY_DAY);
   }
 }
@@ -505,7 +506,7 @@ void armController() {
     arm_move(target_angle);
   }
   else {
-    Serial.println("[ARM] No move needed.");
+    // Serial.println("[ARM] No move needed.");
   }
 }
 
@@ -534,10 +535,10 @@ int mpu_get_current_angle() {
     ay = a.acceleration.y - ACCEL_OFFSET[1];
     az = a.acceleration.z - ACCEL_OFFSET[2];
 
-    Serial.printf("[MPU] Values: {%f, %f, %f}\n", ax, ay, az);
+    // Serial.printf("[MPU] Values: {%f, %f, %f}\n", ax, ay, az);
 
     gravity = sqrtf(ax*ax + ay*ay + az*az);
-    Serial.printf("[MPU] Gravity: %f\n", gravity);
+    // Serial.printf("[MPU] Gravity: %f\n", gravity);
 
     if( retries <= 1 ) {
       Serial.println("Too many bad gravity readings.");
@@ -671,7 +672,7 @@ void pump_controller() {
 
 // Matter functions
 void matter_update_sensors() {
-  Serial.println("[MATTER] updating temperatures and pump activity.");
+  // Serial.println("[MATTER] updating sensors.");
   matter_temp_input.setTemperature(temp_get_by_addr(TEMP_INPUT));
   matter_temp_collector.setTemperature(temp_get_by_addr(TEMP_COLLECTOR));
   matter_temp_tank.setTemperature(temp_get_by_addr(TEMP_TANK));
