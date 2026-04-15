@@ -9,8 +9,7 @@
 
 #include <Matter.h>
 
-#include "esp_pm.h"     // Power management and light sleep
-#include "esp_wifi.h"
+#include "esp_task_wdt.h" // watchdog to check for freezing
 
 #include "SolarNoon/solar_noon.h"
 
@@ -22,7 +21,7 @@ bool wifi_connected_prev = false;
 #define PIN_TEMP_ONEWIRE 19 // GIOP 19
 
 // OUTPUT PINS (GIOP #)
-#define PIN_PUMP 0
+#define PIN_PUMP 15
 #define PIN_ARM_ENABLE 17
 #define PIN_ARM_EXTEND 4
 #define PIN_ARM_RETRACT 16
@@ -99,12 +98,17 @@ MatterTemperatureSensor matter_temp_collector; // temp sensor 2
 MatterTemperatureSensor matter_temp_tank; // temp sensor 3
 MatterTemperatureSensor matter_arm_angle; // temp sensor 4
 MatterContactSensor matter_pump_active; // Contact Sensor 1
+
+// Watchdog and Timing
+#define WATCHDOG_TIMEOUT_LENGTH 60 // (s) how long the watchdog witll wait beforerestarting the esp32
+
 uint32_t matter_last_update = 1500000;
 #define MATTER_UPDATE_PERIOD_SEC 30
 
 
 void setup() {
   Serial.begin(115200);
+  Serial.setTxBufferSize(2048);
 
   Serial.println("");
   delay(500);
@@ -164,20 +168,8 @@ void setup() {
     Serial.printf("[MATTER] Manual pairing code: %s\n", Matter.getManualPairingCode().c_str());
   }
 
-  // esp_pm_config_t pm_config;
-  // // pm_config.max_freq_mhz = 240;  // regular clock freq
-  // // pm_config.min_freq_mhz = 80;   // downclock freq for power saving (80MHz lowest for keeping WiFi alive).
-  // pm_config.light_sleep_enable = false;  // allows scheduler to activate light sleep. delay() on esp32 uses scheduler.
-
-  // esp_err_t esp_pm_err = esp_pm_configure(&pm_config);
-  // if ( esp_pm_err == ESP_OK) {
-  //   Serial.println("[POWER] power management configured.");
-  // } else {
-  //   Serial.printf("[POWER] ERROR: %s\n", esp_err_to_name(esp_pm_err));
-  // }
-  // esp_wifi_set_ps(WIFI_PS_MIN_MODEM); // allow sleeping between wifi keepalives.
-
-  if( WiFi.status() != WL_CONNECTED ) { // wait for wifi to connect
+  // wait for wifi to connect
+  if( WiFi.status() != WL_CONNECTED ) {
     bool led_on = true;
     digitalWrite(PIN_LED, led_on);
     led_on = !led_on;
@@ -194,10 +186,22 @@ void setup() {
   }
 
   rtc_sync();
+
+  esp_task_wdt_init(WATCHDOG_TIMEOUT_LENGTH, true);
+  esp_task_wdt_add(NULL);
+  Serial.println("[SETUP] Watchdog intialized.");
+
   Serial.println("[SETUP] setup done");
 }
 
 void loop() {
+  // TODO: add functions for start/stop of overnight suspend, extract from pump_controller()
+  // TODO: move temp reading to only call when matter updates, prevent unnecessary readings.
+  // TODO: Switch mostly to millis() based timing, (pump, arm, temp)
+  // TODO: reduce mpu logging (?)
+
+  esp_task_wdt_reset(); // reset watchdog timer
+
   get_time_string(time_string);
   Serial.printf("\n%s\n", time_string);
   // Serial.printf("\n%s\n", time_string);
