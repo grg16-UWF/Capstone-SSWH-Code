@@ -107,6 +107,7 @@ uint32_t matter_last_update = 1500000;
 
 
 void setup() {
+  esp_task_wdt_deinit(); // deactivate any existing watchdog
   Serial.begin(115200);
   Serial.setTxBufferSize(2048);
 
@@ -187,8 +188,10 @@ void setup() {
 
   rtc_sync();
 
-  esp_task_wdt_init(WATCHDOG_TIMEOUT_LENGTH, true);
+  esp_task_wdt_config_t watchdog_config = { (uint32_t)WATCHDOG_TIMEOUT_LENGTH*1000, (1 << portNUM_PROCESSORS) - 1, true };
+  esp_task_wdt_init(&watchdog_config);
   esp_task_wdt_add(NULL);
+  esp_task_wdt_reset(); // reset watchdog timer
   Serial.println("[SETUP] Watchdog intialized.");
 
   Serial.println("[SETUP] setup done");
