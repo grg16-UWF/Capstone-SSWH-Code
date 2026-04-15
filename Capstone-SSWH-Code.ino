@@ -35,6 +35,8 @@ const char *ntpServer1 = "pool.ntp.org";
 const char *ntpServer2 = "time.nist.gov";
 #define gmtOffset_sec (-6 * 3600)
 #define daylightOffset_sec 3600
+#define TIME_STRING_BUFFER_LENGTH 64
+char time_string[TIME_STRING_BUFFER_LENGTH];
 
 // OneWire Setup
 #define ONEWIRE_MAX_DEVICES 5
@@ -194,8 +196,9 @@ void setup() {
 }
 
 void loop() {
-  Serial.printf("\n%s\n", time_string().c_str());
-  // Serial.printf("\n%s\n", time_string().c_str());
+  get_time_string(time_string);
+  Serial.printf("\n%s\n", time_string);
+  // Serial.printf("\n%s\n", time_string);
   // time_println();
 
   bool wifi_connected = wifi_check_status();
@@ -232,7 +235,7 @@ void loop() {
   armController();
   
   // heap status
-  Serial.printf("[HEAP] Free: %d  MinFree: %d  LargestBlock: %d\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+  Serial.printf("[HEAP] Free: %lu  MinFree: %lu  LargestBlock: %lu\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
 
   // end of cycle delay
   if(pump_suspended_night) { // assume pump_suspended_night is correct
@@ -273,15 +276,14 @@ void time_println() {
   Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
 }
 
-String time_string() {
+// timestr is a char array of length TIME_STRING_BUFFER_LENGTH
+void get_time_string(char* timestr) {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
-    return String("No time available (yet)");
+    strcpy(timestr, "No time available (yet)");
   }
-  char timestr[60] = {0};
-  strftime(timestr, 60, "%A, %B %d %Y %H:%M:%S", &timeinfo);
+  strftime(timestr, TIME_STRING_BUFFER_LENGTH, "%A, %B %d %Y %H:%M:%S", &timeinfo);
   // Serial.printf("[time_string] timestr: %s\n", timestr);
-  return String(timestr);
 }
 
 struct tm getLocalTime_no_dst() { // I need non-DST time to avoid having to calculate DST cutoff dates
@@ -331,7 +333,8 @@ void rtc_sync() {
 }
 
 void rtc_sync_callback(struct timeval *t) {
-  Serial.printf("Got time adjustment from NTP, time is: %s\n", time_string().c_str());
+  get_time_string(time_string);
+  Serial.printf("Got time adjustment from NTP, time is: %s\n", time_string);
   // time_println();
   RTC_SYNCED = true;
 }
@@ -439,7 +442,9 @@ void arm_move( const int target_angle ) {
     diff = target_angle - current_angle;
     Serial.printf("[Arm Move]: Current Angle: %d, Target Angle: %d, Timeout: %d\n", current_angle, target_angle, timeoutCounter);
     
-    matter_arm_angle.setTemperature(current_angle);
+    if( timeoutCounter % 20 == 0 ) { // only update the arm angle every 4 seconds (ARM_MOVE_POLLING_PERIOD=200ms * 20)
+      matter_arm_angle.setTemperature(current_angle);
+    }
 
     
     if( diff > 0 ) { // extend
@@ -466,6 +471,7 @@ void arm_move( const int target_angle ) {
   digitalWrite(PIN_ARM_RETRACT, LOW);
   digitalWrite(PIN_ARM_EXTEND, LOW);
 
+  matter_arm_angle.setTemperature(current_angle);
   Serial.printf("[Arm Move] Reached %d\n", current_angle);
 }
 
