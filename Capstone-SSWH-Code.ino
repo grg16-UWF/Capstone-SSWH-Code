@@ -66,7 +66,7 @@ const float ACCEL_OFFSET[] = {0.141147, 0.147745, 0.643307}; // { X, Y, Z }
 float accel_raw_iteravg[] = {0, 0, 0}; // store an iterative average of accel measurements
 uint16_t mpu_num_samples = 0;
 int mpu_errored = 0; // if the mpu is errored, prevent using its invalid data
-int mpu_last_good_angle = 0; // only used when mpu sees invalid data. Not used for regular operation to avoid mutex issues and bigger refactor.
+int mpu_current_angle = 0;
 
 // Target Angle limits
 #define ARM_ENABLED true // allow disabling the arm for testing
@@ -99,6 +99,8 @@ MatterTemperatureSensor matter_temp_collector; // temp sensor 2
 MatterTemperatureSensor matter_temp_tank; // temp sensor 3
 MatterTemperatureSensor matter_arm_angle; // temp sensor 4
 MatterContactSensor matter_pump_active; // Contact Sensor 1
+uint32_t matter_last_update = 1500000;
+#define MATTER_UPDATE_PERIOD_SEC 30
 
 
 void setup() {
@@ -226,13 +228,18 @@ void loop() {
   Serial.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
   Serial.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
   // Serial.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
-  matter_update_temp_sensors();
 
   // control the pump.
   pump_controller();
 
   // control the arm.
   armController();
+
+  // update matter sensors
+  if( millis() - matter_last_update > MATTER_UPDATE_PERIOD_SEC*1000 ) {
+    matter_last_update = millis();
+    matter_update_sensors();
+  }
   
   // heap status
   Serial.printf("[HEAP] Free: %lu  MinFree: %lu  LargestBlock: %lu\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
@@ -435,15 +442,14 @@ void arm_move( const int target_angle ) {
   
   int diff; // declare diff for use in while condition
   int timeoutCounter = ARM_MOVE_TIMEOUT / ARM_MOVE_POLLING_PERIOD; // how many polling periods to wait before timing out to attempt other functions.
-  int current_angle = 0;
   do {
     // find angles and diff
-    current_angle = mpu_get_current_angle();
-    diff = target_angle - current_angle;
-    Serial.printf("[Arm Move]: Current Angle: %d, Target Angle: %d, Timeout: %d\n", current_angle, target_angle, timeoutCounter);
+    mpu_current_angle = mpu_get_current_angle();
+    diff = target_angle - mpu_current_angle;
+    Serial.printf("[Arm Move]: Current Angle: %d, Target Angle: %d, Timeout: %d\n", mpu_current_angle, target_angle, timeoutCounter);
     
     if( timeoutCounter % 20 == 0 ) { // only update the arm angle every 4 seconds (ARM_MOVE_POLLING_PERIOD=200ms * 20)
-      matter_arm_angle.setTemperature(current_angle);
+      matter_arm_angle.setTemperature(mpu_current_angle);
     }
 
     
@@ -471,8 +477,7 @@ void arm_move( const int target_angle ) {
   digitalWrite(PIN_ARM_RETRACT, LOW);
   digitalWrite(PIN_ARM_EXTEND, LOW);
 
-  matter_arm_angle.setTemperature(current_angle);
-  Serial.printf("[Arm Move] Reached %d\n", current_angle);
+  Serial.printf("[Arm Move] Reached %d\n", mpu_current_angle);
 }
 
 void armController() {
@@ -484,10 +489,9 @@ void armController() {
   }
 
   // get current arm angle from MPU
-  int current_angle = mpu_get_current_angle();
+  mpu_current_angle = mpu_get_current_angle();
 
-  Serial.printf("[ARM] Current Angle: %d, Target Angle: %d\n", current_angle, target_angle);
-  matter_arm_angle.setTemperature(current_angle);
+  Serial.printf("[ARM] Current Angle: %d, Target Angle: %d\n", mpu_current_angle, target_angle);
   
   // don't attempt to move the arm if it's disabled.
   if( !ARM_ENABLED ) {
@@ -496,21 +500,20 @@ void armController() {
   }
 
   // set acutator to correct position based on desired angle and current angle
-  if( arm_check_move_needed(current_angle, target_angle) ) {
+  if( arm_check_move_needed(mpu_current_angle, target_angle) ) {
     Serial.println("[ARM] Threshold crossed, moving to new angle...");
     arm_move(target_angle);
   }
   else {
     Serial.println("[ARM] No move needed.");
   }
-  matter_arm_angle.setTemperature(current_angle);
 }
 
 
 // Gyroscope functions
 int mpu_get_current_angle() {
   if( mpu_errored ) { // if (mpu_errored != 0 )
-    return mpu_last_good_angle;
+    return mpu_current_angle;
   }
 
   sensors_event_t a;
@@ -538,18 +541,18 @@ int mpu_get_current_angle() {
 
     if( retries <= 1 ) {
       Serial.println("Too many bad gravity readings.");
-      return mpu_last_good_angle;
+      return mpu_current_angle;
     }
   }
 
 
   // convert to roll and pitch
   // float roll = atan2(ay, az) * 180.0/PI;
-  mpu_last_good_angle = atan2(-ax, sqrt(ay*ay + az*az)) * 180.0/PI;
+  mpu_current_angle = atan2(-ax, sqrt(ay*ay + az*az)) * 180.0/PI;
 
   // Serial.printf("[MPU] Roll: %7.3f, Pitch: %7.3f\n", roll, pitch);
 
-  return mpu_last_good_angle;
+  return mpu_current_angle;
 }
 
 float array_median_destructive(const int size, float* array) {
@@ -667,12 +670,14 @@ void pump_controller() {
 
 
 // Matter functions
-void matter_update_temp_sensors() {
+void matter_update_sensors() {
   Serial.println("[MATTER] updating temperatures and pump activity.");
   matter_temp_input.setTemperature(temp_get_by_addr(TEMP_INPUT));
   matter_temp_collector.setTemperature(temp_get_by_addr(TEMP_COLLECTOR));
   matter_temp_tank.setTemperature(temp_get_by_addr(TEMP_TANK));
+
   matter_pump_active.setContact(!pump_active);
+  matter_arm_angle.setTemperature(mpu_current_angle);
 }
 
 
