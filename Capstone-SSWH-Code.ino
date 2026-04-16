@@ -79,6 +79,14 @@ int mpu_current_angle = 0;
 #define PUMP_DUTY_ACTIVE 1    // how many minutes the pump is active per cycle.
 #define PUMP_DUTY_INACTIVE 2  // how many minutes the pump is inactive per cycle.
 
+// PUMP state
+bool pump_active = false;      // 1: pump is active, 0: pump is inactive
+int pump_next_active = 0;      // time when the pump should turn on
+int pump_next_inactive = 0;    // time when the pump should turn off
+bool pump_suspended_night = 1; // whether the pump is currently kept off for nighttime
+
+uint32_t pump_timer_last_toggle = 0; // timer for tracking pump cycle
+
 // time constants
 #define TIME_SUNRISE 330  // (6:30AM DST) what time the pre-sunrise tasks ocurr. (pump enable)
 #define TIME_SUNSET 1170  // (8:30PM DST) what time the post-sunset tasks ocurr. (pump disable, arm reset)
@@ -86,11 +94,6 @@ int mpu_current_angle = 0;
 #define LOOP_DELAY_DAY 5000     // time (ms) to delay at the end of the main loop during the day
 #define LOOP_DELAY_NIGHT 30000  // time (ms) to delay at the end of the main loop overnight (for lower power consumption)
 
-// PUMP state
-bool pump_active = false;      // 1: pump is active, 0: pump is inactive
-int pump_next_active = 0;      // time when the pump should turn on
-int pump_next_inactive = 0;    // time when the pump should turn off
-bool pump_suspended_night = 1; // whether the pump is currently kept off for nighttime
 
 // Matter endpoint setup
 MatterTemperatureSensor matter_temp_input; // temp sensor 1
@@ -100,9 +103,9 @@ MatterTemperatureSensor matter_arm_angle; // temp sensor 4
 MatterContactSensor matter_pump_active; // Contact Sensor 1
 
 // Watchdog and Timing
-#define WATCHDOG_TIMEOUT_LENGTH 60 // (s) how long the watchdog witll wait beforerestarting the esp32
+#define WATCHDOG_TIMEOUT_LENGTH 60 // (s) how long the watchdog witll wait before restarting the esp32
 
-uint32_t matter_last_update = 1500000;
+uint32_t matter_last_update = 0;
 #define MATTER_UPDATE_PERIOD_SEC 30
 
 
@@ -200,7 +203,7 @@ void setup() {
 void loop() {
   // TODO: add functions for start/stop of overnight suspend, extract from pump_controller()
   // TODO: move temp reading to only call when matter updates, prevent unnecessary readings.
-  // TODO: Switch mostly to millis() based timing, (pump, arm, temp)
+  // TODO: Switch mostly to millis() based timing, (pump:X, arm:_, temp:_)
   // TODO: reduce mpu logging (?)
 
   esp_task_wdt_reset(); // reset watchdog timer
@@ -242,15 +245,15 @@ void loop() {
   // control the arm.
   armController();
 
-  // update matter sensors
-  if( millis() - matter_last_update > MATTER_UPDATE_PERIOD_SEC*1000 ) {
+  // update matter sensors if timer expired OR right after startup.
+  if( timer_expired(matter_last_update, MATTER_UPDATE_PERIOD_SEC) || matter_last_update == 0 ) {
     matter_last_update = millis();
     matter_update_sensors();
   }
   
   // heap status
   uint32_t uptime = millis()/1000; // uptime in seconds;
-  Serial.printf("[HEAP] Free: %lu  MinFree: %lu  LargestBlock: %lu  Uptime (m:ss): %lu:%02d\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uptime/60, uptime%60);
+  Serial.printf("[HEAP] Free: %lu  MinFree: %lu  LargestBlock: %lu  Uptime (m:ss): %lu:%02lu\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uptime/60, uptime%60);
 
   // end of cycle delay
   if(pump_suspended_night) { // assume pump_suspended_night is correct
@@ -352,6 +355,13 @@ void rtc_sync_callback(struct timeval *t) {
   Serial.printf("Got time adjustment from NTP, time is: %s\n", time_string);
   // time_println();
   RTC_SYNCED = true;
+}
+
+/* timer: time of last reset; 
+ * timeout_sec: timer length in seconds
+*/
+bool timer_expired(uint32_t timer, uint32_t timeout_sec) {
+  return ( millis() - timer ) >= ( timeout_sec * 1000 ); // time_elapsed(ms) > timeout(ms)
 }
 
 
@@ -625,31 +635,37 @@ void mpu_calibration( float x, float y, float z ) {
 
 
 // Pump functions
+
+// turns on pump, sets pump_active and pump timer.
 void pump_on() {
   digitalWrite(PIN_PUMP, HIGH);
   pump_active = true;
+  pump_timer_last_toggle = millis();
 }
 void pump_off() {
   digitalWrite(PIN_PUMP, LOW);
   pump_active = false;
+  pump_timer_last_toggle = millis();
 }
 
 void pump_controller() {
   int time = get_time(); // time in minutes since midnight
 
+  if( pump_timer_last_toggle == 0 ) { // startup can take arbitrary amount of time. Turn on pump (and reset timer) right after bootup to check it works.
+    pump_on();
+    return;
+  }
+
   if( pump_suspended_night && time >= TIME_SUNRISE && time < TIME_SUNSET ) { // if pump is suspended and its time to enable it, then unsuspend, activate, and schedule a deactivation.
     pump_suspended_night = 0;
     pump_on();
-    pump_next_inactive = time + PUMP_DUTY_ACTIVE;
-    matter_pump_active.setContact(!pump_active);
     
-    Serial.printf("[PUMP] Unsuspending and activating, will turn off at %d.\n", pump_next_inactive);
+    Serial.println("[PUMP] Unsuspending and activating.");
     return;
   }
 
   if( pump_suspended_night ) { // if the pump is suspended, leave it and do nothing.
-    pump_off();
-    matter_pump_active.setContact(!pump_active);
+    // pump_off();
     Serial.println("[PUMP] Suspended...");
     return;
   }
@@ -657,23 +673,21 @@ void pump_controller() {
   if( (time >= TIME_SUNSET || time < TIME_SUNRISE) && !pump_suspended_night) { // if time is outside of enable times AND pump is not suspended, turn off and suspend the pump.
     pump_off();
     pump_suspended_night = 1;
-    matter_pump_active.setContact(!pump_active);
     Serial.println("[PUMP] Suspending for the night.");
     return;
   }
 
   // Regular pump operation
-  if( pump_active && time >= pump_next_inactive ) { // if pump on AND deactivate time reached, turn off pump and set time for activation.
+  if( pump_active && timer_expired(pump_timer_last_toggle, PUMP_DUTY_ACTIVE*60) ) { // if pump on AND deactivate time reached, turn off pump and set time for activation.
     pump_off();
-    pump_next_active = time + PUMP_DUTY_INACTIVE;
-    Serial.printf("[PUMP] Turned off, will turn on at %d.\n", pump_next_active);
+    Serial.println("[PUMP] Turned off.");
+    return;
   }
-  else if( !pump_active && time >= pump_next_active ) { // if pump off AND activation time reached, turn on pump and set deactivate time
+  if( !pump_active && timer_expired(pump_timer_last_toggle, PUMP_DUTY_INACTIVE*60) ) { // if pump off AND activation time reached, turn on pump and set deactivate time
     pump_on();
-    pump_next_inactive = time + PUMP_DUTY_ACTIVE;
-    Serial.printf("[PUMP] Turned on, will turn off at %d.\n", pump_next_inactive);
+    Serial.println("[PUMP] Turned on.");
+    return;
   }
-  matter_pump_active.setContact(!pump_active);
 }
 
 
