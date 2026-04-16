@@ -72,7 +72,7 @@ int mpu_current_angle = 0;
 #define ARM_ANGLE_MAX 38 // maximum angle for solar tracking (facing west)
 #define ARM_ANGLE_MIN -40 // minimum angle for solar tracking (facing east)
 #define ARM_ANGLE_THRESHOLD 5 // how far from the target the current angle can be before moving.
-#define ARM_MOVE_POLLING_PERIOD 200 // (ms) how often the arm should check angle while moving
+#define ARM_MOVE_POLLING_PERIOD 250 // (ms) how often the arm should check angle while moving
 #define ARM_MOVE_TIMEOUT 30000 // (ms) how long before an arm movement times out. For preventing an inaccurate unreachable MPU reading from softlocking arm movement and stopping program flow.
 
 // PUMP SETUP
@@ -92,11 +92,14 @@ MatterTemperatureSensor matter_arm_angle; // temp sensor 4
 MatterContactSensor matter_pump_active; // Contact Sensor 1
 
 uint32_t matter_last_update = 0;
-#define MATTER_UPDATE_PERIOD_SEC 30
+#define MATTER_UPDATE_TIMER_DAY 30   // (s) how often to update matter sensors during daytime
+#define MATTER_UPDATE_TIMER_NIGHT 60 // (s) how often to update matter sensors during nighttime.
 
 
 // Watchdog and Suspend
 #define WATCHDOG_TIMEOUT_LENGTH 60 // (s) how long the watchdog witll wait before restarting the esp32
+uint32_t debug_timer = 0;
+#define DEBUG_TIMER_LENGTH 30 // (s) how often to print debug info
 
 #define TIME_SUNRISE 330  // (min) (6:30AM DST) what time to wake up from suspend.
 #define TIME_SUNSET 1170  // (min) (8:30PM DST) what time to suspend.
@@ -216,10 +219,6 @@ void loop() {
   }
 
 
-  // suspend or unsuspend as needed.
-  suspend_controller();
-  
-
   if( onewire_num_devices <= 0 && setup_attempts > 0 ) { // Find onewire devices if none are detected.
     temp_setup_onewire(); // only run this once to avoid rearranging address indices
   }
@@ -227,27 +226,20 @@ void loop() {
   // temp_print_onewire_addrs();
 
 
+  suspend_controller(); // suspend activities overnight and slow loop cycle, shut off pump if suspending.
 
-  // control the pump.
-  pump_controller();
+  pump_controller(); // run the pump's duty cycle if not suspended
 
-  // control the arm.
-  arm_controller();
+  arm_controller(); // update tilt sensor, track the sun, and reset to ARM_ANGLE_MIN if suspended.
 
-  // read temp sensors a second before matter sensors update
-  if( timer_expired(matter_last_update, MATTER_UPDATE_PERIOD_SEC-1) ) {
-    temp_read_sensors();
-  }
+  matter_controller(); // read temps and update matter at different intervals depending on suspended
 
-  // update matter sensors if timer expired OR right after startup.
-  if( timer_expired(matter_last_update, MATTER_UPDATE_PERIOD_SEC) || matter_last_update == 0 ) {
-    matter_last_update = millis();
-    matter_update_sensors();
-  }
   
-  // heap status
-  uint32_t uptime = millis()/1000; // uptime in seconds;
-  Serial.printf("[HEAP] Free: %lu  MinFree: %lu  LargestBlock: %lu  Uptime (m:ss): %lu:%02lu\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uptime/60, uptime%60);
+  if( timer_expired(debug_timer, DEBUG_TIMER_LENGTH) ) { // log heap status every 15 sec
+    debug_timer = millis();
+    uint32_t uptime = millis()/1000; // uptime in seconds;
+    Serial.printf("[HEAP] Free: %lu  MinFree: %lu  LargestBlock: %lu  Uptime (m:ss): %lu:%02lu\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uptime/60, uptime%60);
+  }
 
   // end of cycle delay
   if(suspended) { 
@@ -393,14 +385,14 @@ void temp_print_onewire_addrs() {
   }
 }
 
-void temp_read_sensors() {
-  if( onewire_num_devices <= 0 ) { // if no temp sensors connected, don't request data. (request sends error if no connected devs).
-    return;
+// call this about a second before temp_read_sensors()
+void temp_request_data() {
+  if( onewire_num_devices >= 0 ) {
+    onewire.request();
   }
+}
 
-  onewire.request();
-  delay(750);
-
+void temp_read_sensors() {
   for( uint8_t i = 0; i < onewire_num_devices; i++ ) {
     uint8_t error = onewire.getTemp(onewire_active_addrs[i], temp_measured[i]);
     if( error ) {
@@ -691,6 +683,8 @@ void matter_update_sensors() {
 
   matter_pump_active.setContact(!pump_active);
   matter_arm_angle.setTemperature(mpu_current_angle);
+  
+  matter_last_update = millis();
 
   // log sensor data
   // Serial.printf("Temp Input:    %11.6f C\n", temp_get_by_addr(TEMP_INPUT) );
@@ -699,6 +693,33 @@ void matter_update_sensors() {
   // Serial.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
 }
 
+// read temps and update matter at different intervals depending on suspended
+void matter_controller() {
+
+  if( matter_last_update == 0 ) { // force updating sensors on first run after boot.
+    temp_read_sensors();
+    delay(750);
+    matter_update_sensors();
+    return;
+  }
+
+  // set matter_timeout_sec to day or night value
+  uint32_t matter_timeout_sec = MATTER_UPDATE_TIMER_DAY;
+  if( suspended ) {
+    matter_timeout_sec = MATTER_UPDATE_TIMER_NIGHT;
+  }
+  
+  // request sensor data a second before matter sensors update
+  if( timer_expired(matter_last_update, matter_timeout_sec-1) ) {
+    temp_request_data();
+  }
+
+  // update matter sensors if timer expired OR right after startup.
+  if( timer_expired(matter_last_update, matter_timeout_sec) ) {
+    temp_read_sensors();
+    matter_update_sensors();
+  }
+}
 
 
 
