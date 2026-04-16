@@ -81,18 +81,7 @@ int mpu_current_angle = 0;
 
 // PUMP state
 bool pump_active = false;      // 1: pump is active, 0: pump is inactive
-int pump_next_active = 0;      // time when the pump should turn on
-int pump_next_inactive = 0;    // time when the pump should turn off
-bool pump_suspended_night = 1; // whether the pump is currently kept off for nighttime
-
 uint32_t pump_timer_last_toggle = 0; // timer for tracking pump cycle
-
-// time constants
-#define TIME_SUNRISE 330  // (6:30AM DST) what time the pre-sunrise tasks ocurr. (pump enable)
-#define TIME_SUNSET 1170  // (8:30PM DST) what time the post-sunset tasks ocurr. (pump disable, arm reset)
-
-#define LOOP_DELAY_DAY 5000     // time (ms) to delay at the end of the main loop during the day
-#define LOOP_DELAY_NIGHT 30000  // time (ms) to delay at the end of the main loop overnight (for lower power consumption)
 
 
 // Matter endpoint setup
@@ -102,11 +91,19 @@ MatterTemperatureSensor matter_temp_tank; // temp sensor 3
 MatterTemperatureSensor matter_arm_angle; // temp sensor 4
 MatterContactSensor matter_pump_active; // Contact Sensor 1
 
-// Watchdog and Timing
-#define WATCHDOG_TIMEOUT_LENGTH 60 // (s) how long the watchdog witll wait before restarting the esp32
-
 uint32_t matter_last_update = 0;
 #define MATTER_UPDATE_PERIOD_SEC 30
+
+
+// Watchdog and Suspend
+#define WATCHDOG_TIMEOUT_LENGTH 60 // (s) how long the watchdog witll wait before restarting the esp32
+
+#define TIME_SUNRISE 330  // (min) (6:30AM DST) what time to wake up from suspend.
+#define TIME_SUNSET 1170  // (min) (8:30PM DST) what time to suspend.
+bool suspended = false;
+
+#define LOOP_DELAY_DAY 5000     // time (ms) to delay at the end of the main loop during the day
+#define LOOP_DELAY_NIGHT 30000  // time (ms) to delay at the end of the main loop overnight (for lower power consumption)
 
 
 void setup() {
@@ -201,8 +198,6 @@ void setup() {
 }
 
 void loop() {
-  // TODO: add functions for start/stop of overnight suspend, extract from pump_controller()
-  // TODO: move temp reading to only call when matter updates, prevent unnecessary readings.
   // TODO: Switch mostly to millis() based timing, (pump:X, arm:_, temp:_)
   // TODO: reduce mpu logging (?)
 
@@ -210,18 +205,19 @@ void loop() {
 
   get_time_string(time_string);
   Serial.printf("\n%s\n", time_string);
-  // Serial.printf("\n%s\n", time_string);
-  // time_println();
 
   bool wifi_connected = wifi_check_status();
   // TODO: try to reconnect to wifi if disconnected.
 
   // If we have a WiFi connection AND the RTC has not already been updated, then try to update the RTC
-  
   if( !RTC_SYNCED && wifi_connected ) {
     Serial.println("[LOOP] syncing time.");
     rtc_sync();
   }
+
+
+  // suspend or unsuspend as needed.
+  suspend_controller();
   
 
   if( onewire_num_devices <= 0 && setup_attempts > 0 ) { // Find onewire devices if none are detected.
@@ -230,20 +226,18 @@ void loop() {
   // list onewire addresses for identifying sensors
   // temp_print_onewire_addrs();
 
-	// read temp sensors
-  temp_read_sensors();
 
-  // log sensor data
-  // Serial.printf("Temp Input:    %11.6f C\n", temp_get_by_addr(TEMP_INPUT) );
-  // Serial.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
-  // Serial.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
-  // Serial.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
 
   // control the pump.
   pump_controller();
 
   // control the arm.
-  armController();
+  arm_controller();
+
+  // read temp sensors a second before matter sensors update
+  if( timer_expired(matter_last_update, MATTER_UPDATE_PERIOD_SEC-1) ) {
+    temp_read_sensors();
+  }
 
   // update matter sensors if timer expired OR right after startup.
   if( timer_expired(matter_last_update, MATTER_UPDATE_PERIOD_SEC) || matter_last_update == 0 ) {
@@ -256,7 +250,7 @@ void loop() {
   Serial.printf("[HEAP] Free: %lu  MinFree: %lu  LargestBlock: %lu  Uptime (m:ss): %lu:%02lu\n", ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uptime/60, uptime%60);
 
   // end of cycle delay
-  if(pump_suspended_night) { // assume pump_suspended_night is correct
+  if(suspended) { 
     // Serial.println("[LOOP] night delay.");
     delay((uint32_t) LOOP_DELAY_NIGHT);
   } else {
@@ -364,6 +358,24 @@ bool timer_expired(uint32_t timer, uint32_t timeout_sec) {
   return ( millis() - timer ) >= ( timeout_sec * 1000 ); // time_elapsed(ms) > timeout(ms)
 }
 
+void suspend_controller() {
+  int time = get_time();
+  bool is_daytime = time >= TIME_SUNRISE && time < TIME_SUNSET;
+
+  if( suspended && is_daytime ) { // if suspended during daytime, then unsuspend
+    Serial.println("[SUSPEND] Unsuspending for the day.");
+    suspended = false;
+    // don't need to turn pump on, pump_controller will see that suspended is false and timer has expired.
+    return;
+  }
+  if( !suspended && !is_daytime ) { // if not suspended during nighttime, then suspend
+    Serial.println("[SUSPEND] Suspending for the night.");
+    suspended = true;
+    pump_off(); // force pump to turn off regardless of timer.
+    return;
+  }
+}
+
 
 // TEMP SENSOR FUNCTIONS
 void temp_setup_onewire() {
@@ -426,7 +438,7 @@ int arm_get_target_angle() {
   // Serial.printf("[TargetAngle] time=%d, noon[%d]=%d, raw_angle=%d\n", curr_mins, day_of_year, solar_noon, angle);
 
   // after sunset timeout, reset arm to morning position.
-  if( curr_mins > TIME_SUNSET || curr_mins < TIME_SUNRISE ) {
+  if( suspended ) {
     angle = ARM_ANGLE_MIN;
     return angle;
   }
@@ -445,10 +457,7 @@ int arm_get_target_angle() {
 bool arm_check_move_needed(int current_angle, int target_angle) { // how many degrees should the arm move to reach target
   int diff = target_angle - current_angle;
 
-  if( diff < ARM_ANGLE_THRESHOLD && diff > -ARM_ANGLE_THRESHOLD ) { // if diff is less than threshold, dont need move
-    return false;
-  }
-  return true;
+  return (diff > ARM_ANGLE_THRESHOLD) || (diff < -ARM_ANGLE_THRESHOLD); // need to move if diff is past threshold
 }
 
 void arm_move( const int target_angle ) {
@@ -466,7 +475,7 @@ void arm_move( const int target_angle ) {
     diff = target_angle - mpu_current_angle;
     Serial.printf("[Arm Move]: Current Angle: %d, Target Angle: %d, Timeout: %d\n", mpu_current_angle, target_angle, timeoutCounter);
     
-    if( timeoutCounter % 20 == 0 ) { // only update the arm angle every 4 seconds (ARM_MOVE_POLLING_PERIOD=200ms * 20)
+    if( timeoutCounter % (5000/ARM_MOVE_POLLING_PERIOD) == 0 ) { // only update the arm angle every 5 seconds
       matter_arm_angle.setTemperature(mpu_current_angle);
     }
 
@@ -495,10 +504,11 @@ void arm_move( const int target_angle ) {
   digitalWrite(PIN_ARM_RETRACT, LOW);
   digitalWrite(PIN_ARM_EXTEND, LOW);
 
+  matter_arm_angle.setTemperature(mpu_current_angle);
   Serial.printf("[Arm Move] Reached %d\n", mpu_current_angle);
 }
 
-void armController() {
+void arm_controller() {
   // Find target angle for tracking actuator / arm
   int target_angle = arm_get_target_angle();
   
@@ -649,45 +659,26 @@ void pump_off() {
 }
 
 void pump_controller() {
-  int time = get_time(); // time in minutes since midnight
-
   if( pump_timer_last_toggle == 0 ) { // startup can take arbitrary amount of time. Turn on pump (and reset timer) right after bootup to check it works.
     pump_on();
     return;
   }
 
-  if( pump_suspended_night && time >= TIME_SUNRISE && time < TIME_SUNSET ) { // if pump is suspended and its time to enable it, then unsuspend, activate, and schedule a deactivation.
-    pump_suspended_night = 0;
-    pump_on();
-    
-    Serial.println("[PUMP] Unsuspending and activating.");
-    return;
+  if( !suspended ) { // do nothing if system is suspended.
+
+    // Regular pump operation
+    if( pump_active && timer_expired(pump_timer_last_toggle, PUMP_DUTY_ACTIVE*60) ) { // if pump on AND deactivate time reached, turn off pump and set time for activation.
+      pump_off();
+      Serial.println("[PUMP] Turned off.");
+      return;
+    }
+    if( !pump_active && timer_expired(pump_timer_last_toggle, PUMP_DUTY_INACTIVE*60) ) { // if pump off AND activation time reached, turn on pump and set deactivate time
+      pump_on();
+      Serial.println("[PUMP] Turned on.");
+      return;
+    }
   }
 
-  if( pump_suspended_night ) { // if the pump is suspended, leave it and do nothing.
-    // pump_off();
-    Serial.println("[PUMP] Suspended...");
-    return;
-  }
-
-  if( (time >= TIME_SUNSET || time < TIME_SUNRISE) && !pump_suspended_night) { // if time is outside of enable times AND pump is not suspended, turn off and suspend the pump.
-    pump_off();
-    pump_suspended_night = 1;
-    Serial.println("[PUMP] Suspending for the night.");
-    return;
-  }
-
-  // Regular pump operation
-  if( pump_active && timer_expired(pump_timer_last_toggle, PUMP_DUTY_ACTIVE*60) ) { // if pump on AND deactivate time reached, turn off pump and set time for activation.
-    pump_off();
-    Serial.println("[PUMP] Turned off.");
-    return;
-  }
-  if( !pump_active && timer_expired(pump_timer_last_toggle, PUMP_DUTY_INACTIVE*60) ) { // if pump off AND activation time reached, turn on pump and set deactivate time
-    pump_on();
-    Serial.println("[PUMP] Turned on.");
-    return;
-  }
 }
 
 
@@ -700,6 +691,12 @@ void matter_update_sensors() {
 
   matter_pump_active.setContact(!pump_active);
   matter_arm_angle.setTemperature(mpu_current_angle);
+
+  // log sensor data
+  // Serial.printf("Temp Input:    %11.6f C\n", temp_get_by_addr(TEMP_INPUT) );
+  // Serial.printf("Temp Collect:  %11.6f C\n", temp_get_by_addr(TEMP_COLLECTOR) );
+  // Serial.printf("Temp Tank:     %11.6f C\n", temp_get_by_addr(TEMP_TANK) );
+  // Serial.printf("Temp Air:      %11.6f C\n", temp_get_by_addr(TEMP_AIR) );
 }
 
 
