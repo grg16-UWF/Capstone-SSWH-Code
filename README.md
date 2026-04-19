@@ -18,8 +18,8 @@ Program for smart system
 | 17     | OUT  | Arm Enable   |
 | 16     | OUT  | Arm Retract  |
 | 4      | OUT  | Arm Extend   |
-| 0      | OUT  | Pump Relay   |
 | 2      | OUT  | Onboard LED  |
+| 15     | OUT  | Pump Relay   |
 
 ### Temp Sensor
 - Red: VCC
@@ -40,7 +40,8 @@ Program for smart system
 - AD0: Address select (May need to GND if address problems)
 - INT: Interrupt to other dev (UNUSED)
 
-## Adruino IDE Setup
+## Setup
+### Adruino IDE 
 
 Preferences > Additional boards manager URLs:
  - `https://dl.espressif.com/dl/package_esp32_index.json`
@@ -53,6 +54,20 @@ Library Manager
  - **Adafruit MPU6050** by Adafruit `2.2.9` and dependencies
 
 Select Board **ESP32 Dev Module**
+
+Tools > Partition Scheme > **Huge APP (3 MB No OTA / 1 MB SPIFFS)**
+
+For Matter onboarding only (including first-time setup):
+ - Tools > Erase All Flash Before Sketch Upload > **Enabled**
+ - This removes any stored Matter connection when the program is flashed to the ESP32's storage. **Disable** this once connected to Matter or the connection will be removed when you next upload the program the ESP32.
+ - Note: When the Matter connection is removed, the smart home system may purge historical data for this device. If you want to keep historical data, please export the data before removing the device.
+ - Note: Any changes to the number or type of Matter endpoints will cause the device to need to be onboarded again.
+
+### Environment secrets
+
+Copy `example_env.h` to a new file `env.h` and replace the example secrets in `env.h`. This allows your secrets to be accessed by the program while blocked from being tracked by git version control.
+
+NEVER store secrets in `example_env.h` as this file is tracked by git and may be exposed to the public.
 
 ## Solar Noon
  - [NOAA Solar Calculator](https://gml.noaa.gov/grad/solcalc/)
